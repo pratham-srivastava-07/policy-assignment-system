@@ -1,0 +1,19 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@policy/core": "*", "@policy/db": "*", "@policy/shared": "*",
+    "bullmq": "^5", "dotenv": "^17", "ioredis": "^5", "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4", "typescript": "^5"
+  }
+}

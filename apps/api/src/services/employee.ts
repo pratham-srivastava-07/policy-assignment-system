@@ -23,7 +23,7 @@ import {
   OutboxEventRepository,
   TransactionManager,
   Tx,
-} from "../repositories"
+} from "@policy/core"
 import { EmployeeServiceInterface, UpdateEmployeeRecord } from "../interfaces/employee"
 import {
   CreateEmployeeInput,
@@ -31,8 +31,8 @@ import {
   PatchEmployeeInput,
   ReplaceEmployeeInput,
 } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toAttributeHistoryDTO, toEmployeeDTO } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toAttributeHistoryDTO, toEmployeeDTO } from "@policy/core"
 
 /** One attribute that moved, with the values on each side of the change. */
 interface AttributeChange {

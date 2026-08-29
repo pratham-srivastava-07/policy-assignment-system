@@ -14,11 +14,11 @@ import {
   TransactionManager,
   User,
   UserRepository,
-} from "../repositories"
+} from "@policy/core"
 import { UserServiceInterface } from "../interfaces/user"
 import { CreateUserInput, ListUsersQuery, UpdateUserInput } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toPublicUser } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toPublicUser } from "@policy/core"
 
 /**
  * Users — login identities, as opposed to employees, who are workforce records.

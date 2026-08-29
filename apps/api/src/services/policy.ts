@@ -13,7 +13,7 @@ import {
   PolicyCategoryRepository,
   PolicyRepository,
   TransactionManager,
-} from "../repositories"
+} from "@policy/core"
 import {
   PolicyCategoryServiceInterface,
   PolicyServiceInterface,
@@ -27,8 +27,8 @@ import {
   PatchPolicyInput,
   ReplacePolicyInput,
 } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toPolicyCategoryDTO, toPolicyDTO } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toPolicyCategoryDTO, toPolicyDTO } from "@policy/core"
 
 /**
  * Policy categories — the unit that carries assignment cardinality.

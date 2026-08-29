@@ -20,14 +20,14 @@ import {
   sessionRepository,
   transactionManager,
   userRepository,
-} from "../repositories"
+} from "@policy/core"
 import { AccessService } from "./access"
 import { AuditService } from "./audit"
 import { AuthService } from "./auth"
 import { EmployeeService } from "./employee"
 import { GroupService } from "./group"
 import { PolicyCategoryService, PolicyService } from "./policy"
-import { ResolutionService } from "./resolution"
+import { ResolutionService } from "@policy/core"
 import { RuleService } from "./rule"
 import { UserService } from "./user"
 
@@ -119,6 +119,6 @@ export { AuthService } from "./auth"
 export { EmployeeService } from "./employee"
 export { GroupService } from "./group"
 export { PolicyCategoryService, PolicyService } from "./policy"
-export { ResolutionService } from "./resolution"
+export { ResolutionService } from "@policy/core"
 export { RuleService } from "./rule"
 export { UserService } from "./user"

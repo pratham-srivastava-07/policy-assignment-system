@@ -10,7 +10,8 @@
     "prisma:generate": "npm run prisma:generate --workspace @policy/db"
   },
   "dependencies": {
-    "@policy/db": "*", "@policy/shared": "*", "bcrypt": "^5", "cors": "^2", "dotenv": "^17",
+    "@policy/core": "*", "@policy/db": "*", "@policy/shared": "*",
+    "bcrypt": "^5", "cors": "^2", "dotenv": "^17",
     "express": "^5", "jsonwebtoken": "^9", "zod": "^4"
   },
   "devDependencies": {

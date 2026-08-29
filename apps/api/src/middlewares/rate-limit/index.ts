@@ -18,7 +18,7 @@ import {
   RateLimitTier,
 } from "@policy/shared"
 import { AuthedRequest } from "../../interfaces/auth"
-import { AppError, toHttpError } from "../../utils/AppError"
+import { AppError, toHttpError } from "@policy/core"
 import { MemoryRateLimitStore, RateLimitStore } from "./store"
 
 export { MemoryRateLimitStore } from "./store"

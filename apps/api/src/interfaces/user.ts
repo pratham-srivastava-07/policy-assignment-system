@@ -3,20 +3,12 @@ import { Page, PublicUser } from "@policy/shared"
 import { CreateUserInput, ListUsersQuery, UpdateUserInput } from "../validators"
 import { AuthedRequest } from "./auth"
 
-/** What a repository write actually persists — never the plaintext password. */
-export interface CreateUserRecord {
-  name: string
-  email: string
-  passwordHash: string
-  employeeId?: string | null
-}
-
-export interface UpdateUserRecord {
-  name?: string
-  email?: string
-  passwordHash?: string
-  employeeId?: string | null
-}
+/**
+ * The record types moved to `@policy/core` with the repositories that consume
+ * them, and are re-exported here so nothing in `apps/api` had to change where
+ * it reads them from.
+ */
+export type { CreateUserRecord, UpdateUserRecord } from "@policy/core"
 
 export interface UserServiceInterface {
   createUser(

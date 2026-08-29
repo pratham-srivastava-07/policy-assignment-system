@@ -20,7 +20,7 @@ import {
   OutboxEventRepository,
   TransactionManager,
   Tx,
-} from "../repositories"
+} from "@policy/core"
 import { GroupServiceInterface } from "../interfaces/group"
 import {
   AddGroupMemberInput,
@@ -30,8 +30,8 @@ import {
   PatchGroupInput,
   ReplaceGroupInput,
 } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toGroupDTO, toGroupMemberDTO } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toGroupDTO, toGroupMemberDTO } from "@policy/core"
 
 /**
  * Groups and their effective-dated membership.

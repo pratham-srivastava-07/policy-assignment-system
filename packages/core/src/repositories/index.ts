@@ -70,6 +70,7 @@ export type {
   Assignment,
   Employee,
   Group,
+  OutboxEvent,
   Policy,
   PolicyCategory,
   PolicyRule,

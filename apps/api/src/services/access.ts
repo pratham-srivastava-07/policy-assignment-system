@@ -11,11 +11,11 @@ import {
   AssignmentRepository,
   PolicyCategoryRepository,
   PolicyRepository,
-} from "../repositories"
+} from "@policy/core"
 import { AccessServiceInterface } from "../interfaces/assignment"
 import { AccessQuery, GrantAccessInput } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toAssignmentDTO } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toAssignmentDTO } from "@policy/core"
 import { RuleService } from "./rule"
 
 /**

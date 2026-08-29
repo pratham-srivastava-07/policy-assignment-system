@@ -16,12 +16,12 @@ import {
   SessionRepository,
   TransactionManager,
   UserRepository,
-} from "../repositories"
+} from "@policy/core"
 import { AuthServiceInterface } from "../interfaces/auth"
 import { LoginInput, SignupInput } from "../validators"
-import { AppError } from "../utils/AppError"
+import { AppError } from "@policy/core"
 import { generateSessionToken, hashSessionToken } from "../utils/token"
-import { toPublicOrganization, toPublicUser } from "../utils/serialize"
+import { toPublicOrganization, toPublicUser } from "@policy/core"
 
 /**
  * Stateful authentication.

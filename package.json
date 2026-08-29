@@ -3,8 +3,8 @@
     "private": true,
     "workspaces": ["apps/*", "packages/*"],
     "scripts": {
-        "build": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run build --workspace api",
-        "dev": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run dev --workspace api",
+        "build": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run build --workspace @policy/core && npm run build --workspace api && npm run build --workspace worker",
+        "dev": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run build --workspace @policy/core && npm run dev --workspace api",
         "prisma:generate": "npm run prisma:generate --workspace @policy/db",
         "prisma:migrate": "npm run prisma:migrate --workspace @policy/db",
         "prisma:studio": "npm run prisma:studio --workspace @policy/db"

@@ -2,7 +2,7 @@ import { NextFunction, Response } from "express"
 import { AuthedRequest } from "../interfaces/auth"
 import { IAccessController, IAssignmentController } from "../interfaces/assignment"
 import { AccessService } from "../services/access"
-import { ResolutionService } from "../services/resolution"
+import { ResolutionService } from "@policy/core"
 import {
   accessQuerySchema,
   employeeAssignmentsQuerySchema,
@@ -12,7 +12,7 @@ import {
   previewEmployeeSchema,
   reconcileEmployeeSchema,
 } from "../validators"
-import { toHttpError } from "../utils/AppError"
+import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
 
 /**

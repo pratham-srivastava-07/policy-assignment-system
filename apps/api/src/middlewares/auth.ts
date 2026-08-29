@@ -2,7 +2,7 @@ import { NextFunction, Response } from "express"
 import { ERROR_CODES } from "@policy/shared"
 import { authService } from "../services"
 import { AuthedRequest } from "../interfaces/auth"
-import { AppError, toHttpError } from "../utils/AppError"
+import { AppError, toHttpError } from "@policy/core"
 import { extractBearerToken } from "../utils/token"
 
 /**

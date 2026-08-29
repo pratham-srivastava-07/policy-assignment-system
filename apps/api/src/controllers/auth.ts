@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express"
 import { AuthedRequest, IAuthController } from "../interfaces/auth"
 import { AuthService } from "../services/auth"
 import { loginSchema, signupSchema } from "../validators"
-import { toHttpError } from "../utils/AppError"
+import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
 
 export class AuthController implements IAuthController {

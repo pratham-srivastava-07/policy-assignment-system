@@ -32,13 +32,13 @@ import {
   TransactionManager,
   Tx,
 } from "../repositories"
-import { ResolutionServiceInterface } from "../interfaces/assignment"
 import {
   EmployeeAssignmentsQuery,
   ListAssignmentsQuery,
   PreviewEmployeeInput,
   ReconcileEmployeeInput,
-} from "../validators"
+  ResolutionServiceInterface,
+} from "../interfaces/resolution"
 import { AppError } from "../utils/AppError"
 import {
   toAssignmentDTO,
@@ -255,7 +255,7 @@ export class ResolutionService implements ResolutionServiceInterface {
    */
   async reconcile(
     organizationId: string,
-    actorId: string,
+    actorId: string | null,
     employeeId: string,
     data: ReconcileEmployeeInput,
   ): Promise<ReconciliationResultDTO> {

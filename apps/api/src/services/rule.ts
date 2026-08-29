@@ -27,7 +27,7 @@ import {
   PolicyRuleVersionRepository,
   TransactionManager,
   Tx,
-} from "../repositories"
+} from "@policy/core"
 import { RuleServiceInterface } from "../interfaces/rule"
 import {
   CreateOverrideInput,
@@ -37,9 +37,9 @@ import {
   PatchRuleInput,
   SimulateRuleInput,
 } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toRuleDTO, toRuleVersionDTO } from "../utils/serialize"
-import { buildEmployeeContext, evaluateConditions, explainMatch } from "../engine"
+import { AppError } from "@policy/core"
+import { toRuleDTO, toRuleVersionDTO } from "@policy/core"
+import { buildEmployeeContext, evaluateConditions, explainMatch } from "@policy/core"
 
 /** The rule state that a version snapshot records. */
 interface RuleState {

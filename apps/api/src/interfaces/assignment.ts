@@ -7,48 +7,16 @@ import {
   ReconciliationResultDTO,
   RuleDTO,
 } from "@policy/shared"
-import {
-  AccessQuery,
-  EmployeeAssignmentsQuery,
-  GrantAccessInput,
-  ListAssignmentsQuery,
-  PreviewEmployeeInput,
-  ReconcileEmployeeInput,
-} from "../validators"
+import { AccessQuery, GrantAccessInput } from "../validators"
 import { AuthedRequest } from "./auth"
 
-export interface ResolutionServiceInterface {
-  /** "Which policies applied to this employee on date D?" */
-  listForEmployee(
-    organizationId: string,
-    employeeId: string,
-    query: EmployeeAssignmentsQuery,
-  ): Promise<Page<AssignmentDTO>>
-
-  /** The batch read — one query for many employees, not one query each. */
-  listForEmployees(
-    organizationId: string,
-    query: ListAssignmentsQuery,
-  ): Promise<Page<AssignmentDTO>>
-
-  /** "Why does this assignment exist?" — winner, rule text, and every loser. */
-  explain(organizationId: string, assignmentId: string): Promise<AssignmentExplanationDTO>
-
-  /** Hypothetical changes through the same engine. Writes NOTHING. */
-  preview(
-    organizationId: string,
-    employeeId: string,
-    data: PreviewEmployeeInput,
-  ): Promise<PreviewDTO>
-
-  /** Materialize: desired versus current, end-date and create the difference. */
-  reconcile(
-    organizationId: string,
-    actorId: string,
-    employeeId: string,
-    data: ReconcileEmployeeInput,
-  ): Promise<ReconciliationResultDTO>
-}
+/**
+ * `ResolutionServiceInterface` moved to `@policy/core` with the service that
+ * implements it: the reconciliation worker calls the same materialization, and
+ * a worker cannot import a module that names `Response`. It is re-exported here
+ * so the API still reads it from the interface module it always did.
+ */
+export type { ResolutionServiceInterface } from "@policy/core"
 
 export interface AccessServiceInterface {
   /** Application access, read out of the assignments in that category. */

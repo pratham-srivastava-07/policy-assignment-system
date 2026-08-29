@@ -5,11 +5,11 @@ import {
   Page,
   fromIsoDate,
 } from "@policy/shared"
-import { AuditEventRepository, EmployeeRepository } from "../repositories"
+import { AuditEventRepository, EmployeeRepository } from "@policy/core"
 import { AuditServiceInterface } from "../interfaces/rule"
 import { EmployeeAuditQuery, ListAuditEventsQuery } from "../validators"
-import { AppError } from "../utils/AppError"
-import { toAuditEventDTO } from "../utils/serialize"
+import { AppError } from "@policy/core"
+import { toAuditEventDTO } from "@policy/core"
 
 /**
  * The audit feed.

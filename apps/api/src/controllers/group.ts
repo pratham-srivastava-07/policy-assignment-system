@@ -13,7 +13,7 @@ import {
   removeGroupMemberQuerySchema,
   replaceGroupSchema,
 } from "../validators"
-import { toHttpError } from "../utils/AppError"
+import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
 
 export class GroupController implements IGroupController {

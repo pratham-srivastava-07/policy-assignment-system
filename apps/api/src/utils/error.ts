@@ -1,10 +1,17 @@
 import { NextFunction, Request, Response } from "express"
 import { ERROR_CODES } from "@policy/shared"
-import { AppError } from "../interfaces/error"
+import { AppErrorShape } from "@policy/core"
 import { env } from "../config/env"
 
+/**
+ * The structural error shape is `AppErrorShape` rather than `AppError`: the
+ * class and the interface both moved to `@policy/core`, where the class keeps
+ * the plain name every `throw` site uses. This handler wants the shape, because
+ * what reaches it is whatever `toHttpError` normalized, not necessarily an
+ * instance.
+ */
 export const globalErrorHandler = (
-  err: AppError,
+  err: AppErrorShape,
   _req: Request,
   res: Response,
   _next: NextFunction,

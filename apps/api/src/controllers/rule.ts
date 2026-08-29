@@ -12,7 +12,7 @@ import {
   patchRuleSchema,
   simulateRuleSchema,
 } from "../validators"
-import { toHttpError } from "../utils/AppError"
+import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
 
 /**

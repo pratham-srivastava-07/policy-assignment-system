@@ -1,4 +1,3 @@
-import { Employee, EmployeeStatus } from "@policy/db"
 import { NextFunction, Response } from "express"
 import { EmployeeAttributeHistoryDTO, EmployeeDTO, Page } from "@policy/shared"
 import {
@@ -9,42 +8,21 @@ import {
 } from "../validators"
 import { AuthedRequest } from "./auth"
 
-/** The columns a repository write actually persists. */
-export interface EmployeeRecord {
-  name: string
-  email: string
-  hireDate: Date
-  employmentType: string
-  department: string | null
-  role: string | null
-  location: string | null
-  state: string | null
-  country: string | null
-  isManager: boolean
-}
-
-export type CreateEmployeeRecord = EmployeeRecord
-
-export type UpdateEmployeeRecord = Partial<EmployeeRecord>
-
-/** Attribute filters a list request may narrow on. */
-export interface EmployeeFilters {
-  department?: string
-  state?: string
-  country?: string
-  location?: string
-  employmentType?: string
-  role?: string
-  isManager?: boolean
-  status?: EmployeeStatus
-  /** Case-insensitive substring match over name and email. */
-  search?: string
-}
-
-export interface EmployeeListOptions extends EmployeeFilters {
-  limit: number
-  offset: number
-}
+/**
+ * The record and filter types moved to `@policy/core` when the repositories
+ * did — the worker writes employees through the same repository and cannot see
+ * this file, which names `Request` and `Response`. They are re-exported here so
+ * that everything in `apps/api` still reads them from the interface module it
+ * always did.
+ */
+export type {
+  CreateEmployeeRecord,
+  EmployeeFilters,
+  EmployeeListOptions,
+  EmployeeRecord,
+  EmployeeRow,
+  UpdateEmployeeRecord,
+} from "@policy/core"
 
 export interface EmployeeServiceInterface {
   create(
@@ -98,6 +76,3 @@ export interface IEmployeeController {
   terminate(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   getAttributeHistory(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
 }
-
-/** Row -> transport shape. Tenure is derived here, never read from a column. */
-export type EmployeeRow = Employee

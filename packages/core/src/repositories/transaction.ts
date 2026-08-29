@@ -8,7 +8,7 @@ import { TxClient } from "../interfaces/db"
  * transaction client they always took — but services see it under this name and
  * treat it as opaque: they receive one from `run`, pass it straight through to
  * repository calls, and never call a method on it. That is the whole point. The
- * service layer needs to express "these writes commit together", not "I have a
+ * service layer needs to state "these writes commit together", not "I have a
  * Prisma client".
  */
 export type Tx = TxClient
