@@ -1,5 +1,5 @@
 import { Queue } from "bullmq"
-import { OutboxEvent, OutboxEventRepository } from "@policy/core"
+import { OutboxEvent, OutboxEventRepository, RuleFanOutService } from "@policy/core"
 import { OUTBOX_EVENT_TYPES } from "@policy/shared"
 import { env } from "./config/env"
 import { RECONCILE_EMPLOYEE_JOB, ReconcileEmployeeJob } from "./queue"
@@ -8,11 +8,14 @@ import { RECONCILE_EMPLOYEE_JOB, ReconcileEmployeeJob } from "./queue"
  * What the relay decided to do with one row.
  *
  *   `enqueue`  — a job was built for it;
+ *   `fanOut`   — it names a RULE, whose affected population has to be derived
+ *                before any job can be built;
  *   `settle`   — nothing to enqueue, and nothing will ever need to be;
  *   `reject`   — this row names work the relay cannot express as a job.
  */
 type Plan =
   | { action: "enqueue"; job: ReconcileEmployeeJob }
+  | { action: "fanOut"; ruleId: string; ruleVersion: number | null; asOf: string | null }
   | { action: "settle"; reason: string }
   | { action: "reject"; reason: string }
 
@@ -21,6 +24,8 @@ interface OutboxPayload {
   employeeId?: unknown
   changedAttributes?: unknown
   effectiveFrom?: unknown
+  ruleId?: unknown
+  ruleVersion?: unknown
 }
 
 /**
@@ -58,6 +63,7 @@ export class OutboxRelay {
   constructor(
     private outbox: OutboxEventRepository,
     private queue: Queue<ReconcileEmployeeJob>,
+    private fanOut: RuleFanOutService,
   ) {}
 
   /** Begin polling. Returns immediately; the loop runs on its own. */
@@ -210,6 +216,13 @@ export class OutboxRelay {
       return
     }
 
+    if (plan.action === "fanOut") {
+
+      await this.dispatchFanOut(row, plan)
+
+      return
+    }
+
     if (plan.action === "reject") {
 
       // Not a transient failure: nothing about waiting makes this row
@@ -231,6 +244,83 @@ export class OutboxRelay {
       await this.enqueue(plan.job)
 
       await this.outbox.markProcessed(row.id)
+    } catch (error) {
+
+      await this.retry(row, error)
+    }
+  }
+
+  /**
+   * A rule changed. Derive who it touches, and enqueue one job each.
+   *
+   * This is the only place one outbox row becomes many jobs. The population
+   * comes from `RuleFanOutService`, which unions the rule's current matches, its
+   * previous-version matches, and anyone already holding an assignment it
+   * sourced — so both halves of a change are covered: employees who should now
+   * gain the policy, and employees who should now lose it.
+   *
+   * A rule that affects nobody is a real and ordinary outcome — a rule whose
+   * conditions match no one yet — so it settles as PROCESSED rather than failing.
+   *
+   * A failure to derive or enqueue goes through the same backoff as any other
+   * enqueue failure. Because the row is only marked PROCESSED once every job is
+   * on the queue, a crash part-way through re-runs the whole fan-out on the next
+   * attempt; the per-employee jobIds make that re-run collapse onto the jobs that
+   * already exist, and the reconciliation diff makes a duplicate harmless anyway.
+   */
+  private async dispatchFanOut(
+    row: OutboxEvent,
+    plan: { ruleId: string; ruleVersion: number | null; asOf: string | null },
+  ): Promise<void> {
+
+    try {
+
+      const asOf = plan.asOf ? new Date(`${plan.asOf}T00:00:00.000Z`) : new Date()
+
+      const result = await this.fanOut.affectedEmployeeIds(
+        row.organizationId,
+        plan.ruleId,
+        plan.ruleVersion,
+        asOf,
+      )
+
+      if (result.sweptWholeOrganization) {
+
+        console.warn(
+          `[relay] ${row.eventType} ${row.id}: rule ${plan.ruleId} has no narrowable ` +
+            "conditions, so the whole active population was evaluated.",
+        )
+      }
+
+      for (const employeeId of result.employeeIds) {
+
+        await this.queue.add(
+          RECONCILE_EMPLOYEE_JOB,
+          {
+            outboxEventId: row.id,
+            organizationId: row.organizationId,
+            employeeId,
+            eventType: row.eventType,
+            ...(plan.asOf !== null && { asOf: plan.asOf }),
+          },
+          {
+            // One row fans out to many jobs, so the row id alone would collapse
+            // them into one. The employee makes each job distinct while keeping
+            // a redelivered row idempotent.
+            jobId: `${row.id}:${employeeId}`,
+          },
+        )
+      }
+
+      await this.outbox.markProcessed(row.id)
+
+      console.log(
+        `[relay] ${row.eventType} ${row.id}: rule ${plan.ruleId} fanned out to ` +
+          `${result.employeeIds.length} employee(s) ` +
+          `(current ${result.breakdown.fromCurrentConditions}, ` +
+          `previous ${result.breakdown.fromPreviousConditions}, ` +
+          `holding ${result.breakdown.fromExistingAssignments})`,
+      )
     } catch (error) {
 
       await this.retry(row, error)
@@ -320,16 +410,18 @@ export class OutboxRelay {
    * an override names the one employee it targets, so its affected population is
    * known exactly.
    *
-   * DECISION: a rule event for a non-manual rule, and `group.deleted`, are
-   * REJECTED rather than dispatched. Their affected population is a set of
-   * employees that the payload does not name and that no repository query
-   * currently answers — `docs/architecture.md` §12 requires the worker to narrow
-   * the population rather than sweep the organization, and building that
-   * narrowing is a design task, not a wiring one. Rejecting is the honest state:
-   * the row stays FAILED on the table, visible, as reconciliation that is owed
-   * and not done. Sweeping every employee instead would be inventing the
-   * behaviour the document warns against, and silently marking it PROCESSED
-   * would hide it.
+   * A rule event for a non-manual rule FANS OUT: `RuleFanOutService` derives the
+   * affected population from the rule's conditions, narrowing to an indexed
+   * query where the clauses allow and evaluating only the residue in memory, as
+   * `docs/architecture.md` §12 asks.
+   *
+   * DECISION: `group.deleted` is still REJECTED. Its affected population is the
+   * group's former members, and deleting the group takes the memberships with
+   * it, so by the time this row is read there is nothing left to enumerate.
+   * Recovering it means either soft-deleting groups or naming the members in the
+   * payload — a producer-side change, not something the relay can fix. The row
+   * stays FAILED on the table, visible, as reconciliation that is owed and not
+   * done.
    */
   private plan(row: OutboxEvent): Plan {
 
@@ -352,11 +444,30 @@ export class OutboxRelay {
     const payload = this.payload(row)
     const employeeId = this.text(payload.employeeId)
 
+    // A rule row names a rule, not a person. An override names both — its
+    // employeeId is set — and is handled by the ordinary single-employee path
+    // below, because its population is already known exactly.
+    //
+    // Everything else on a rule fans out: the affected employees are derived
+    // from the rule's own conditions, its previous version's conditions, and
+    // whoever currently holds an assignment it sourced.
+    const ruleId = this.text(payload.ruleId)
+
+    if (!employeeId && ruleId) {
+
+      return {
+        action: "fanOut",
+        ruleId,
+        ruleVersion: this.integer(payload.ruleVersion),
+        asOf: this.text(payload.effectiveFrom),
+      }
+    }
+
     if (!employeeId) {
 
       return {
         action: "reject",
-        reason: "no employeeId in the payload, and this worker cannot derive the affected population",
+        reason: "no employeeId and no ruleId in the payload, so the affected population cannot be derived",
       }
     }
 
@@ -390,6 +501,16 @@ export class OutboxRelay {
   private text(value: unknown): string | null {
 
     if (typeof value === "string" && value.length > 0) {
+
+      return value
+    }
+
+    return null
+  }
+
+  private integer(value: unknown): number | null {
+
+    if (typeof value === "number" && Number.isInteger(value)) {
 
       return value
     }

@@ -1,7 +1,21 @@
+import path from "path"
 import { z } from "zod"
 import dotenv from "dotenv"
 
-dotenv.config()
+/**
+ * Anchored to this package, not to the working directory.
+ *
+ * `dotenv.config()` with no path resolves `.env` against `process.cwd()`, so the
+ * process only found its configuration when it happened to be started from the
+ * package root. Running it from the repo root — which is where the workspace
+ * scripts run — threw a validation error for variables that were sitting in a
+ * file three lines away. Resolving from `__dirname` makes the location a
+ * property of the package rather than of how it was launched.
+ *
+ * `src/config` -> package root is two levels up; from the compiled
+ * `dist/config` it is the same two, which is why this works in both.
+ */
+dotenv.config({ path: path.resolve(__dirname, "../../.env") })
 
 /**
  * The worker's environment, validated at import time.

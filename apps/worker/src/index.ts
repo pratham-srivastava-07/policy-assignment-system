@@ -1,6 +1,7 @@
 import { PrismaClass } from "@policy/db"
 import {
   ResolutionService,
+  RuleFanOutService,
   assignmentRepository,
   assignmentResolutionEventRepository,
   auditEventRepository,
@@ -8,6 +9,7 @@ import {
   employeeRepository,
   outboxEventRepository,
   policyRuleRepository,
+  policyRuleVersionRepository,
   transactionManager,
 } from "@policy/core"
 import { env } from "./config/env"
@@ -56,7 +58,26 @@ const resolutionService = new ResolutionService(
   auditEventRepository,
 )
 
-const relay = new OutboxRelay(outboxEventRepository, reconciliationQueue)
+/**
+ * Derives who a rule change affects.
+ *
+ * Wired here rather than inside the relay because it is a data-layer question,
+ * not a queueing one: the relay knows it must fan a rule row out, and this knows
+ * to whom.
+ */
+const ruleFanOutService = new RuleFanOutService(
+  policyRuleRepository,
+  policyRuleVersionRepository,
+  employeeRepository,
+  employeeGroupRepository,
+  assignmentRepository,
+)
+
+const relay = new OutboxRelay(
+  outboxEventRepository,
+  reconciliationQueue,
+  ruleFanOutService,
+)
 
 const processor = new ReconciliationProcessor(resolutionService, employeeRepository)
 

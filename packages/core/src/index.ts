@@ -26,6 +26,7 @@ export * from "./engine"
 
 // Materialization.
 export * from "./services/resolution"
+export * from "./services/rule-fan-out"
 
 // Persistence-shaped vocabulary. The HTTP-shaped halves of `employee` and
 // `user` stay in apps/api and re-export from here.

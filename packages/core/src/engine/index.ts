@@ -9,3 +9,5 @@
 export * from "./types"
 export { evaluateConditions, explainFailure, explainMatch, renderClause } from "./conditions"
 export { buildEmployeeContext, resolve } from "./resolve"
+export { isUnnarrowed, narrowConditions } from "./candidates"
+export type { CandidateFilter, NarrowedConditions } from "./candidates"

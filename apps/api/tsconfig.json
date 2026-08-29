@@ -1,15 +1,23 @@
 {
   "compilerOptions": {
     "target": "es2016",
-    // Declared explicitly: the code uses Object.values (ES2017) and
-    // Array.prototype.flatMap (ES2019). Without this, the only reason those
-    // resolve is that @types/node pulls in a newer lib as a side effect — which
-    // makes the build depend on a transitive dependency's internals.
-    "lib": ["ES2020"],
-    "module": "commonjs", "rootDir": "./src", "outDir": "./dist",
-    "resolveJsonModule": true, "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true, "strict": true, "skipLibCheck": true
+    "lib": [
+      "ES2020"
+    ],
+    "module": "commonjs",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

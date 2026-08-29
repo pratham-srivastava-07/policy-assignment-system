@@ -5,6 +5,7 @@ import {
   EmployeeListOptions,
   UpdateEmployeeRecord,
 } from "../interfaces/employee"
+import { CandidateFilter } from "../engine/candidates"
 
 /**
  * Employees.
@@ -159,6 +160,79 @@ class EmployeeRepository {
         organizationId,
         status: "ACTIVE",
       },
+      orderBy: {
+        name: "asc",
+      },
+    })
+  }
+
+  /**
+   * Active employees that could match a rule, given a narrowed filter.
+   *
+   * This is the fan-out query: when a rule changes, it answers "who might this
+   * affect?" without loading the organization. Every field on the filter is an
+   * AND, and the filter only ever contains clauses that were safe to push down,
+   * so this can return rows that do not ultimately match — the caller finishes
+   * the job by evaluating the residual clauses in the engine. It never omits a
+   * row that does match, which is the property that matters.
+   *
+   * An empty filter selects every active employee, which is correct: a rule with
+   * no narrowable conditions really does affect everyone. `isUnnarrowed` lets a
+   * caller see that coming.
+   *
+   * Group membership is a join rather than a column, and is filtered on
+   * memberships that are open as of `asOf` using the same half-open predicate as
+   * everywhere else.
+   */
+  async findCandidates(
+    organizationId: string,
+    filter: CandidateFilter,
+    asOf: Date,
+    tx?: TxClient,
+  ): Promise<Employee[]> {
+
+    const where: Prisma.EmployeeWhereInput = {
+      organizationId,
+      status: "ACTIVE",
+    }
+
+    if (filter.department) where.department = { in: filter.department }
+    if (filter.state) where.state = { in: filter.state }
+    if (filter.country) where.country = { in: filter.country }
+    if (filter.location) where.location = { in: filter.location }
+    if (filter.employmentType) where.employmentType = { in: filter.employmentType }
+    if (filter.role) where.role = { in: filter.role }
+
+    if (filter.isManager !== undefined) where.isManager = filter.isManager
+
+    if (filter.hireDateFrom || filter.hireDateTo) {
+
+      where.hireDate = {
+        ...(filter.hireDateFrom ? { gte: filter.hireDateFrom } : {}),
+        ...(filter.hireDateTo ? { lte: filter.hireDateTo } : {}),
+      }
+    }
+
+    if (filter.groupIds && filter.groupIds.length > 0) {
+
+      where.groupMemberships = {
+        some: {
+          groupId: {
+            in: filter.groupIds,
+          },
+          effectiveFrom: {
+            lte: asOf,
+          },
+          OR: [
+            { effectiveTo: null },
+            { effectiveTo: { gt: asOf } },
+          ],
+        },
+      }
+    }
+
+    return this.db(tx).employee.findMany({
+      where,
       orderBy: {
         name: "asc",
       },
