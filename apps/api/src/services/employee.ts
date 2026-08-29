@@ -1,4 +1,3 @@
-import { Employee, Prisma, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -17,12 +16,14 @@ import {
 import {
   AssignmentRepository,
   AuditEventRepository,
+  Employee,
   EmployeeAttributeHistoryRepository,
   EmployeeGroupRepository,
   EmployeeRepository,
   OutboxEventRepository,
+  TransactionManager,
+  Tx,
 } from "../repositories"
-import { TxClient } from "../interfaces/db"
 import { EmployeeServiceInterface, UpdateEmployeeRecord } from "../interfaces/employee"
 import {
   CreateEmployeeInput,
@@ -57,9 +58,8 @@ interface AttributeChange {
  */
 export class EmployeeService implements EmployeeServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private employees: EmployeeRepository,
     private history: EmployeeAttributeHistoryRepository,
     private groups: EmployeeGroupRepository,
@@ -90,7 +90,7 @@ export class EmployeeService implements EmployeeServiceInterface {
     // the day the record happened to be typed in.
     const effectiveFrom = fromIsoDate(data.effectiveFrom ?? data.hireDate)
 
-    const employee = await this.prisma.$transaction(async (tx) => {
+    const employee = await this.transactions.run(async (tx) => {
 
       const created = await this.employees.create(
         organizationId,
@@ -242,7 +242,7 @@ export class EmployeeService implements EmployeeServiceInterface {
 
     const terminatedOn = fromIsoDate(terminatedOnInput ?? todayIsoDate())
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const terminated = await this.employees.terminate(organizationId, id, terminatedOn, tx)
 
@@ -372,7 +372,7 @@ export class EmployeeService implements EmployeeServiceInterface {
     const effectiveFrom = fromIsoDate(effectiveFromInput ?? todayIsoDate())
     const changes = this.diffAttributes(before, patch)
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.employees.update(organizationId, id, patch, tx)
 
@@ -451,14 +451,14 @@ export class EmployeeService implements EmployeeServiceInterface {
     changes: AttributeChange[],
     effectiveFrom: Date,
     actorId: string,
-    tx: TxClient,
+    tx: Tx,
   ): Promise<void> {
 
     const attributes = changes.map((change) => change.attribute)
 
     await this.history.closeOpenRows(employeeId, attributes, effectiveFrom, tx)
 
-    const rows: Prisma.EmployeeAttributeHistoryCreateManyInput[] = changes.map((change) => ({
+    const rows = changes.map((change) => ({
       employeeId,
       attribute: change.attribute,
       oldValue: change.oldValue,

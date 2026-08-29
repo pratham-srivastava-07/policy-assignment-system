@@ -1,5 +1,4 @@
 import bcrypt from "bcrypt"
-import { User, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -12,6 +11,8 @@ import {
   AuditEventRepository,
   EmployeeRepository,
   OrganizationMembershipRepository,
+  TransactionManager,
+  User,
   UserRepository,
 } from "../repositories"
 import { UserServiceInterface } from "../interfaces/user"
@@ -30,9 +31,8 @@ import { toPublicUser } from "../utils/serialize"
  */
 export class UserService implements UserServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private users: UserRepository,
     private memberships: OrganizationMembershipRepository,
     private employees: EmployeeRepository,
@@ -64,7 +64,7 @@ export class UserService implements UserServiceInterface {
 
     const passwordHash = await bcrypt.hash(data.password, PASSWORD_SALT_ROUNDS)
 
-    const user = await this.prisma.$transaction(async (tx) => {
+    const user = await this.transactions.run(async (tx) => {
 
       const created = await this.users.create(
         {
@@ -175,7 +175,7 @@ export class UserService implements UserServiceInterface {
       }),
     }
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.users.update(id, patch, tx)
 
@@ -204,7 +204,7 @@ export class UserService implements UserServiceInterface {
 
     const user = await this.requireUser(organizationId, id)
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactions.run(async (tx) => {
 
       await this.audit.record(
         organizationId,

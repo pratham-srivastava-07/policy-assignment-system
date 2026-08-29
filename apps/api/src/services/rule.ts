@@ -1,4 +1,3 @@
-import { Employee, PolicyRule, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -18,14 +17,17 @@ import {
 } from "@policy/shared"
 import {
   AuditEventRepository,
+  Employee,
   EmployeeGroupRepository,
   EmployeeRepository,
   OutboxEventRepository,
   PolicyRepository,
+  PolicyRule,
   PolicyRuleRepository,
   PolicyRuleVersionRepository,
+  TransactionManager,
+  Tx,
 } from "../repositories"
-import { TxClient } from "../interfaces/db"
 import { RuleServiceInterface } from "../interfaces/rule"
 import {
   CreateOverrideInput,
@@ -73,9 +75,8 @@ interface RuleState {
  */
 export class RuleService implements RuleServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private rules: PolicyRuleRepository,
     private versions: PolicyRuleVersionRepository,
     private policies: PolicyRepository,
@@ -121,7 +122,7 @@ export class RuleService implements RuleServiceInterface {
       effectiveTo: data.effectiveTo ? fromIsoDate(data.effectiveTo) : null,
     }
 
-    const rule = await this.prisma.$transaction(async (tx) => {
+    const rule = await this.transactions.run(async (tx) => {
 
       const created = await this.rules.create(
         organizationId,
@@ -495,7 +496,7 @@ export class RuleService implements RuleServiceInterface {
     const evaluableChange = this.hasEvaluableChange(before, next)
     const version = evaluableChange ? before.version + 1 : before.version
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.rules.update(
         organizationId,
@@ -620,7 +621,7 @@ export class RuleService implements RuleServiceInterface {
   }
 
   /** Write the immutable snapshot for the rule's current version. */
-  private async snapshot(rule: PolicyRule, actorId: string, tx: TxClient): Promise<void> {
+  private async snapshot(rule: PolicyRule, actorId: string, tx: Tx): Promise<void> {
 
     await this.versions.create(
       {
@@ -645,7 +646,7 @@ export class RuleService implements RuleServiceInterface {
     organizationId: string,
     eventType: string,
     rule: PolicyRule,
-    tx: TxClient,
+    tx: Tx,
   ): Promise<void> {
 
     await this.outbox.enqueue(

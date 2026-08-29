@@ -23,6 +23,7 @@ import { PolicyCategoryRepository } from "./policy-category.repository"
 import { PolicyRuleRepository } from "./policy-rule.repository"
 import { PolicyRuleVersionRepository } from "./policy-rule-version.repository"
 import { SessionRepository } from "./session.repository"
+import { TransactionManager } from "./transaction"
 import { UserRepository } from "./user.repository"
 
 // Tenancy and identity
@@ -51,6 +52,30 @@ export const assignmentResolutionEventRepository = new AssignmentResolutionEvent
 export const auditEventRepository = new AuditEventRepository()
 export const outboxEventRepository = new OutboxEventRepository()
 
+// The transaction boundary itself. Services take this instead of a Prisma
+// client, so opening a transaction never leaves the data layer.
+export const transactionManager = new TransactionManager()
+
+/**
+ * Row types, re-exported in type position only.
+ *
+ * A few service helpers genuinely name what a repository hands back — the
+ * employee a diff reads attributes off, the rule a snapshot serializes. Those
+ * types have no DTO equivalent yet, so rather than let the service layer import
+ * Prisma for them, the door they already use for everything else in the data
+ * layer supplies them. `export type` means none of this survives into the
+ * emitted JavaScript, and `@policy/db` stays inside `repositories/`.
+ */
+export type {
+  Assignment,
+  Employee,
+  Group,
+  Policy,
+  PolicyCategory,
+  PolicyRule,
+  User,
+} from "@policy/db"
+
 // Classes and record/payload types, for constructor injection and typing.
 export * from "./assignment.repository"
 export * from "./assignment-resolution-event.repository"
@@ -67,4 +92,5 @@ export * from "./policy-category.repository"
 export * from "./policy-rule.repository"
 export * from "./policy-rule-version.repository"
 export * from "./session.repository"
+export * from "./transaction"
 export * from "./user.repository"

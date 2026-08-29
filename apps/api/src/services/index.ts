@@ -18,6 +18,7 @@ import {
   policyRuleRepository,
   policyRuleVersionRepository,
   sessionRepository,
+  transactionManager,
   userRepository,
 } from "../repositories"
 import { AccessService } from "./access"
@@ -31,6 +32,7 @@ import { RuleService } from "./rule"
 import { UserService } from "./user"
 
 export const authService = new AuthService(
+  transactionManager,
   organizationRepository,
   userRepository,
   organizationMembershipRepository,
@@ -39,6 +41,7 @@ export const authService = new AuthService(
 )
 
 export const userService = new UserService(
+  transactionManager,
   userRepository,
   organizationMembershipRepository,
   employeeRepository,
@@ -46,6 +49,7 @@ export const userService = new UserService(
 )
 
 export const employeeService = new EmployeeService(
+  transactionManager,
   employeeRepository,
   employeeAttributeHistoryRepository,
   employeeGroupRepository,
@@ -55,6 +59,7 @@ export const employeeService = new EmployeeService(
 )
 
 export const groupService = new GroupService(
+  transactionManager,
   groupRepository,
   employeeGroupRepository,
   employeeRepository,
@@ -63,17 +68,20 @@ export const groupService = new GroupService(
 )
 
 export const policyCategoryService = new PolicyCategoryService(
+  transactionManager,
   policyCategoryRepository,
   auditEventRepository,
 )
 
 export const policyService = new PolicyService(
+  transactionManager,
   policyRepository,
   policyCategoryRepository,
   auditEventRepository,
 )
 
 export const ruleService = new RuleService(
+  transactionManager,
   policyRuleRepository,
   policyRuleVersionRepository,
   policyRepository,
@@ -84,6 +92,7 @@ export const ruleService = new RuleService(
 )
 
 export const resolutionService = new ResolutionService(
+  transactionManager,
   employeeRepository,
   employeeGroupRepository,
   policyRuleRepository,

@@ -1,4 +1,3 @@
-import { Policy, PolicyCategory, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -9,8 +8,11 @@ import {
 } from "@policy/shared"
 import {
   AuditEventRepository,
+  Policy,
+  PolicyCategory,
   PolicyCategoryRepository,
   PolicyRepository,
+  TransactionManager,
 } from "../repositories"
 import {
   PolicyCategoryServiceInterface,
@@ -37,9 +39,8 @@ import { toPolicyCategoryDTO, toPolicyDTO } from "../utils/serialize"
  */
 export class PolicyCategoryService implements PolicyCategoryServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private categories: PolicyCategoryRepository,
     private audit: AuditEventRepository,
   ) {}
@@ -61,7 +62,7 @@ export class PolicyCategoryService implements PolicyCategoryServiceInterface {
       )
     }
 
-    const category = await this.prisma.$transaction(async (tx) => {
+    const category = await this.transactions.run(async (tx) => {
 
       const created = await this.categories.create(organizationId, data, tx)
 
@@ -128,7 +129,7 @@ export class PolicyCategoryService implements PolicyCategoryServiceInterface {
       }
     }
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.categories.update(organizationId, id, data, tx)
 
@@ -171,7 +172,7 @@ export class PolicyCategoryService implements PolicyCategoryServiceInterface {
 
     const category = await this.require(organizationId, id)
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactions.run(async (tx) => {
 
       await this.audit.record(
         organizationId,
@@ -236,9 +237,8 @@ export class PolicyCategoryService implements PolicyCategoryServiceInterface {
  */
 export class PolicyService implements PolicyServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private policies: PolicyRepository,
     private categories: PolicyCategoryRepository,
     private audit: AuditEventRepository,
@@ -259,7 +259,7 @@ export class PolicyService implements PolicyServiceInterface {
       throw new AppError("Policy category not found", 404, ERROR_CODES.NOT_FOUND)
     }
 
-    const policy = await this.prisma.$transaction(async (tx) => {
+    const policy = await this.transactions.run(async (tx) => {
 
       const created = await this.policies.create(
         organizationId,
@@ -343,7 +343,7 @@ export class PolicyService implements PolicyServiceInterface {
 
     const policy = await this.require(organizationId, id)
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactions.run(async (tx) => {
 
       await this.audit.record(
         organizationId,
@@ -379,7 +379,7 @@ export class PolicyService implements PolicyServiceInterface {
 
     const before = await this.require(organizationId, id)
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.policies.update(organizationId, id, patch, tx)
 

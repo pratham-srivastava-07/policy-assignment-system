@@ -1,4 +1,3 @@
-import { Assignment, Employee, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -18,18 +17,21 @@ import {
   todayIsoDate,
 } from "@policy/shared"
 import {
+  Assignment,
   AssignmentRepository,
   AssignmentWithContext,
   AssignmentResolutionEventRepository,
   AuditEventRepository,
   CreateResolutionEventRecord,
+  Employee,
   EmployeeGroupRepository,
   EmployeeRepository,
   PolicyRuleRepository,
   PolicyRuleWithPolicy,
   ResolutionEventWithRule,
+  TransactionManager,
+  Tx,
 } from "../repositories"
-import { TxClient } from "../interfaces/db"
 import { ResolutionServiceInterface } from "../interfaces/assignment"
 import {
   EmployeeAssignmentsQuery,
@@ -81,9 +83,8 @@ type EmployeeOverrides = PreviewEmployeeInput["changes"]
  */
 export class ResolutionService implements ResolutionServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private employees: EmployeeRepository,
     private groups: EmployeeGroupRepository,
     private rules: PolicyRuleRepository,
@@ -276,7 +277,7 @@ export class ResolutionService implements ResolutionServiceInterface {
     const asOf = fromIsoDate(data.asOf ?? todayIsoDate())
     const evaluatedAt = new Date()
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.transactions.run(async (tx) => {
 
       const resolution = await this.evaluate(organizationId, employee, asOf, tx)
 
@@ -469,7 +470,7 @@ export class ResolutionService implements ResolutionServiceInterface {
     organizationId: string,
     employee: Employee,
     asOf: Date,
-    tx?: TxClient,
+    tx?: Tx,
   ): Promise<ResolutionResult> {
 
     const candidates = await this.rules.findCandidatesForEmployee(

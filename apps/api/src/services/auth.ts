@@ -1,5 +1,4 @@
 import bcrypt from "bcrypt"
-import { PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -15,6 +14,7 @@ import {
   OrganizationMembershipRepository,
   OrganizationRepository,
   SessionRepository,
+  TransactionManager,
   UserRepository,
 } from "../repositories"
 import { AuthServiceInterface } from "../interfaces/auth"
@@ -32,9 +32,8 @@ import { toPublicOrganization, toPublicUser } from "../utils/serialize"
  */
 export class AuthService implements AuthServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private organizations: OrganizationRepository,
     private users: UserRepository,
     private memberships: OrganizationMembershipRepository,
@@ -69,7 +68,7 @@ export class AuthService implements AuthServiceInterface {
     const tokenHash = hashSessionToken(token)
     const expiresAt = this.sessionExpiry()
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.transactions.run(async (tx) => {
 
       const organization = await this.organizations.create({ name: data.organizationName }, tx)
 
@@ -199,7 +198,7 @@ export class AuthService implements AuthServiceInterface {
     const tokenHash = hashSessionToken(token)
     const expiresAt = this.sessionExpiry()
 
-    const session = await this.prisma.$transaction(async (tx) => {
+    const session = await this.transactions.run(async (tx) => {
 
       const created = await this.sessions.create(
         {
@@ -237,7 +236,7 @@ export class AuthService implements AuthServiceInterface {
   /** Server-side logout. Idempotent. */
   async logout(sessionId: string, actorId: string, organizationId: string): Promise<void> {
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactions.run(async (tx) => {
 
       const revoked = await this.sessions.revoke(sessionId, new Date(), tx)
 

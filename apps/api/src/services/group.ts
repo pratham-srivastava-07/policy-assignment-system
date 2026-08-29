@@ -1,4 +1,3 @@
-import { Group, PrismaClass } from "@policy/db"
 import {
   AUDIT_ACTIONS,
   AUDIT_ENTITY_TYPES,
@@ -16,10 +15,12 @@ import {
   AuditEventRepository,
   EmployeeGroupRepository,
   EmployeeRepository,
+  Group,
   GroupRepository,
   OutboxEventRepository,
+  TransactionManager,
+  Tx,
 } from "../repositories"
-import { TxClient } from "../interfaces/db"
 import { GroupServiceInterface } from "../interfaces/group"
 import {
   AddGroupMemberInput,
@@ -44,9 +45,8 @@ import { toGroupDTO, toGroupMemberDTO } from "../utils/serialize"
  */
 export class GroupService implements GroupServiceInterface {
 
-  private prisma = PrismaClass.getInstance()
-
   constructor(
+    private transactions: TransactionManager,
     private groups: GroupRepository,
     private members: EmployeeGroupRepository,
     private employees: EmployeeRepository,
@@ -71,7 +71,7 @@ export class GroupService implements GroupServiceInterface {
       )
     }
 
-    const group = await this.prisma.$transaction(async (tx) => {
+    const group = await this.transactions.run(async (tx) => {
 
       const created = await this.groups.create(
         organizationId,
@@ -152,7 +152,7 @@ export class GroupService implements GroupServiceInterface {
 
     const group = await this.requireGroup(organizationId, id)
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.transactions.run(async (tx) => {
 
       await this.audit.record(
         organizationId,
@@ -247,7 +247,7 @@ export class GroupService implements GroupServiceInterface {
       )
     }
 
-    const membership = await this.prisma.$transaction(async (tx) => {
+    const membership = await this.transactions.run(async (tx) => {
 
       const created = await this.members.create(
         {
@@ -323,7 +323,7 @@ export class GroupService implements GroupServiceInterface {
       )
     }
 
-    const closed = await this.prisma.$transaction(async (tx) => {
+    const closed = await this.transactions.run(async (tx) => {
 
       const updated = await this.members.endMembership(membership.id, effectiveTo, tx)
 
@@ -404,7 +404,7 @@ export class GroupService implements GroupServiceInterface {
       }
     }
 
-    const after = await this.prisma.$transaction(async (tx) => {
+    const after = await this.transactions.run(async (tx) => {
 
       const updated = await this.groups.update(organizationId, id, patch, tx)
 
@@ -450,7 +450,7 @@ export class GroupService implements GroupServiceInterface {
     groupId: string,
     employeeId: string,
     effectiveFrom: Date,
-    tx: TxClient,
+    tx: Tx,
   ): Promise<void> {
 
     await this.outbox.enqueue(
