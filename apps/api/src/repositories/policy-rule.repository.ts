@@ -2,6 +2,30 @@ import { PolicyRule, Prisma, PrismaClass, RuleType } from "@policy/db"
 import { RuleConditions } from "@policy/shared"
 import { TxClient } from "../interfaces/db"
 
+/**
+ * A rule joined to the policy it produces and the category that carries the
+ * cardinality. This is the shape the assignment engine consumes: everything it
+ * needs to decide and to explain, in one read.
+ */
+export type PolicyRuleWithPolicy = Prisma.PolicyRuleGetPayload<{
+  include: {
+    policy: {
+      include: {
+        category: true
+      }
+    }
+  }
+}>
+
+/** Filters the rule list endpoint may narrow on. */
+export interface PolicyRuleListOptions {
+  policyId?: string
+  ruleType?: RuleType
+  enabled?: boolean
+  limit: number
+  offset: number
+}
+
 export interface CreatePolicyRuleRecord {
   policyId: string
   /** Set for RuleType.MANUAL and for nothing else — a CHECK constraint enforces it. */
@@ -164,6 +188,161 @@ class PolicyRuleRepository {
         priority: "desc",
       },
     })
+  }
+
+  /**
+   * Every rule that could conceivably apply to one employee, joined to its
+   * policy and category.
+   *
+   * Deliberately UNFILTERED on `enabled`, on the effective window and on policy
+   * status: the engine records why each rule was skipped, and pre-filtering here
+   * would throw away half of the explanation. The only narrowing is the manual
+   * one — a MANUAL rule belongs to a single employee, so somebody else's
+   * override is never a candidate.
+   */
+  async findCandidatesForEmployee(
+    organizationId: string,
+    employeeId: string,
+    tx?: TxClient,
+  ): Promise<PolicyRuleWithPolicy[]> {
+
+    return this.db(tx).policyRule.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { employeeId: null },
+          { employeeId },
+        ],
+      },
+      include: {
+        policy: {
+          include: {
+            category: true,
+          },
+        },
+      },
+      orderBy: [
+        { priority: "desc" },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
+    })
+  }
+
+  /**
+   * The population sweep's candidate set: every rule that is not somebody's
+   * personal override, plus the overrides belonging to the employees being
+   * evaluated.
+   */
+  async findCandidatesForEmployees(
+    organizationId: string,
+    employeeIds: string[],
+    tx?: TxClient,
+  ): Promise<PolicyRuleWithPolicy[]> {
+
+    return this.db(tx).policyRule.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { employeeId: null },
+          { employeeId: { in: employeeIds } },
+        ],
+      },
+      include: {
+        policy: {
+          include: {
+            category: true,
+          },
+        },
+      },
+      orderBy: [
+        { priority: "desc" },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
+    })
+  }
+
+  async findByIdWithPolicy(
+    organizationId: string,
+    id: string,
+    tx?: TxClient,
+  ): Promise<PolicyRuleWithPolicy | null> {
+
+    return this.db(tx).policyRule.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+      include: {
+        policy: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    })
+  }
+
+  async findMany(
+    organizationId: string,
+    options: PolicyRuleListOptions,
+    tx?: TxClient,
+  ): Promise<PolicyRule[]> {
+
+    return this.db(tx).policyRule.findMany({
+      where: this.buildWhere(organizationId, options),
+      orderBy: [
+        { priority: "desc" },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
+      take: options.limit,
+      skip: options.offset,
+    })
+  }
+
+  async count(
+    organizationId: string,
+    options: Partial<PolicyRuleListOptions> = {},
+    tx?: TxClient,
+  ): Promise<number> {
+
+    return this.db(tx).policyRule.count({
+      where: this.buildWhere(organizationId, options),
+    })
+  }
+
+  /** Every manual override targeting one employee, newest first. */
+  async findOverridesForEmployee(
+    organizationId: string,
+    employeeId: string,
+    tx?: TxClient,
+  ): Promise<PolicyRule[]> {
+
+    return this.db(tx).policyRule.findMany({
+      where: {
+        organizationId,
+        employeeId,
+        ruleType: "MANUAL",
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    })
+  }
+
+  private buildWhere(
+    organizationId: string,
+    options: Partial<PolicyRuleListOptions>,
+  ): Prisma.PolicyRuleWhereInput {
+
+    return {
+      organizationId,
+      ...(options.policyId !== undefined && { policyId: options.policyId }),
+      ...(options.ruleType !== undefined && { ruleType: options.ruleType }),
+      ...(options.enabled !== undefined && { enabled: options.enabled }),
+    }
   }
 
   async update(

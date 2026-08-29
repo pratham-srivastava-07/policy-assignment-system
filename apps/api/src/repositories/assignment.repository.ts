@@ -211,6 +211,85 @@ class AssignmentRepository {
     })
   }
 
+  /** The same read, for a batch of employees — one query, not N. */
+  async findForEmployeesAsOf(
+    organizationId: string,
+    employeeIds: string[],
+    asOf: Date,
+    tx?: TxClient,
+  ): Promise<AssignmentWithContext[]> {
+
+    if (employeeIds.length === 0) {
+
+      return []
+    }
+
+    return this.db(tx).assignment.findMany({
+      where: {
+        organizationId,
+        employeeId: {
+          in: employeeIds,
+        },
+        ...this.effectiveOn(asOf),
+      },
+      include: {
+        policy: true,
+        category: true,
+        sourceRuleVersionRow: true,
+      },
+      orderBy: [
+        { employeeId: "asc" },
+        { effectiveFrom: "desc" },
+      ],
+    })
+  }
+
+  async findByIdWithContext(
+    organizationId: string,
+    id: string,
+    tx?: TxClient,
+  ): Promise<AssignmentWithContext | null> {
+
+    return this.db(tx).assignment.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+      include: {
+        policy: true,
+        category: true,
+        sourceRuleVersionRow: true,
+      },
+    })
+  }
+
+  /**
+   * End-date every open assignment an employee holds.
+   *
+   * Termination uses this: employment ended, so every policy derived from it
+   * ends on the same day. Nothing is deleted — the history stays readable.
+   */
+  async closeAllOpenForEmployee(
+    organizationId: string,
+    employeeId: string,
+    effectiveTo: Date,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    const result = await this.db(tx).assignment.updateMany({
+      where: {
+        organizationId,
+        employeeId,
+        effectiveTo: null,
+      },
+      data: {
+        effectiveTo,
+      },
+    })
+
+    return result.count
+  }
+
   /**
    * Supersede an assignment by end-dating it. Assignments are never deleted
    * during reconciliation — history has to stay reconstructible.

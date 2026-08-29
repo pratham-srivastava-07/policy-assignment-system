@@ -1,4 +1,4 @@
-import { Employee, Prisma, PrismaClass } from "@policy/db"
+import { Employee, EmployeeStatus, Prisma, PrismaClass } from "@policy/db"
 import { TxClient } from "../interfaces/db"
 import {
   CreateEmployeeRecord,
@@ -40,6 +40,7 @@ class EmployeeRepository {
     if (options.employmentType !== undefined) where.employmentType = options.employmentType
     if (options.role !== undefined) where.role = options.role
     if (options.isManager !== undefined) where.isManager = options.isManager
+    if (options.status !== undefined) where.status = options.status
 
     if (options.search) {
 
@@ -138,6 +139,55 @@ class EmployeeRepository {
         organizationId,
       },
       data,
+    })
+
+    return result.count
+  }
+
+  /**
+   * Every ACTIVE employee in the organization.
+   *
+   * Unpaginated on purpose: the callers are the population sweeps behind
+   * /rules/:id/matching-employees and /rules/simulate, which cannot page in the
+   * database — whether an employee matches is only known after the engine has
+   * run, so the page has to be taken from the evaluated result.
+   */
+  async findAllActive(organizationId: string, tx?: TxClient): Promise<Employee[]> {
+
+    return this.db(tx).employee.findMany({
+      where: {
+        organizationId,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        name: "asc",
+      },
+    })
+  }
+
+  /**
+   * Termination — what `DELETE /employees/:id` now does.
+   *
+   * The row survives, because every assignment, audit event and resolution event
+   * that names this employee has to stay explainable after they leave.
+   */
+  async terminate(
+    organizationId: string,
+    id: string,
+    terminatedOn: Date,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    const result = await this.db(tx).employee.updateMany({
+      where: {
+        id,
+        organizationId,
+        status: "ACTIVE",
+      },
+      data: {
+        status: "TERMINATED",
+        terminatedOn,
+      },
     })
 
     return result.count

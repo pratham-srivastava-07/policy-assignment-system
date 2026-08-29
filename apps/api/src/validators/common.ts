@@ -44,4 +44,13 @@ export const idParam = z.object({
   id: uuid,
 })
 
+/**
+ * Every policy-state read is a point-in-time question. `asOf` is optional and
+ * defaults to today in the service, so "which policies apply?" and "which
+ * policies applied on 1 January?" are the same endpoint.
+ */
+export const asOfPaginationQuery = paginationQuery.extend({
+  asOf: isoDate.optional(),
+})
+
 export type PaginationQuery = z.infer<typeof paginationQuery>

@@ -64,3 +64,40 @@ export const OUTBOX_STATUSES = [
 ] as const
 
 export type OutboxStatus = (typeof OUTBOX_STATUSES)[number]
+
+/**
+ * The outcome recorded for one rule in one evaluation.
+ *
+ * Every rule the engine looked at gets exactly one of these, winners and losers
+ * alike — that is what makes "why does employee X have assignment Y?" a query
+ * rather than an archaeology exercise.
+ *
+ *   MATCHED_WON              - conditions matched and the rule produced the assignment
+ *   MATCHED_LOST             - conditions matched but a higher-ordered rule won a
+ *                              SINGLE-cardinality category
+ *   NOT_MATCHED              - the employee did not satisfy the conditions
+ *   SKIPPED_DISABLED         - the rule is disabled
+ *   SKIPPED_OUT_OF_WINDOW    - the as-of date falls outside the rule's effective window
+ *   SKIPPED_POLICY_INACTIVE  - the rule's policy is DRAFT or ARCHIVED
+ */
+export const RESOLUTION_DECISIONS = [
+  "MATCHED_WON",
+  "MATCHED_LOST",
+  "NOT_MATCHED",
+  "SKIPPED_DISABLED",
+  "SKIPPED_OUT_OF_WINDOW",
+  "SKIPPED_POLICY_INACTIVE",
+] as const
+
+export type ResolutionDecision = (typeof RESOLUTION_DECISIONS)[number]
+
+/**
+ * Employment lifecycle.
+ *
+ * Employees are never hard-deleted: a departure is a TERMINATED status plus a
+ * termination date, so the assignment history that hangs off the row survives.
+ * Terminated employees are excluded from resolution.
+ */
+export const EMPLOYEE_STATUSES = ["ACTIVE", "TERMINATED"] as const
+
+export type EmployeeStatus = (typeof EMPLOYEE_STATUSES)[number]

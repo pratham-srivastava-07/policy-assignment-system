@@ -8,6 +8,7 @@ import {
   listEmployeesQuerySchema,
   patchEmployeeSchema,
   replaceEmployeeSchema,
+  terminateEmployeeSchema,
 } from "../validators"
 import { toHttpError } from "../utils/AppError"
 import { requireAuthContext } from "../middlewares/auth"
@@ -107,16 +108,23 @@ export class EmployeeController implements IEmployeeController {
     }
   }
 
-  delete = async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
+  /** DELETE is a termination, not a deletion. See the service. */
+  terminate = async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
 
     try {
 
       const auth = requireAuthContext(req)
       const { id } = idParam.parse(req.params)
+      const { terminatedOn } = terminateEmployeeSchema.parse(req.body ?? {})
 
       res.status(200).json({
         success: true,
-        data: await this.service.delete(auth.organizationId, auth.userId, id),
+        data: await this.service.terminate(
+          auth.organizationId,
+          auth.userId,
+          id,
+          terminatedOn,
+        ),
       })
     } catch (err) {
 

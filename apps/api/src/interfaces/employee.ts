@@ -1,4 +1,4 @@
-import { Employee } from "@policy/db"
+import { Employee, EmployeeStatus } from "@policy/db"
 import { NextFunction, Response } from "express"
 import { EmployeeAttributeHistoryDTO, EmployeeDTO, Page } from "@policy/shared"
 import {
@@ -36,6 +36,7 @@ export interface EmployeeFilters {
   employmentType?: string
   role?: string
   isManager?: boolean
+  status?: EmployeeStatus
   /** Case-insensitive substring match over name and email. */
   search?: string
 }
@@ -70,7 +71,17 @@ export interface EmployeeServiceInterface {
     data: PatchEmployeeInput,
   ): Promise<EmployeeDTO>
 
-  delete(organizationId: string, actorId: string, id: string): Promise<EmployeeDTO>
+  /**
+   * Termination. Replaces hard deletion: the row survives so that the
+   * assignments, audit events and resolution events naming this employee stay
+   * explainable.
+   */
+  terminate(
+    organizationId: string,
+    actorId: string,
+    id: string,
+    terminatedOn?: string,
+  ): Promise<EmployeeDTO>
 
   getAttributeHistory(
     organizationId: string,
@@ -84,7 +95,7 @@ export interface IEmployeeController {
   getById(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   replace(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   patch(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
-  delete(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
+  terminate(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   getAttributeHistory(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
 }
 

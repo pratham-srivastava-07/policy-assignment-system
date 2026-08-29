@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { EMPLOYEE_STATUSES } from "@policy/shared"
 import { email, isoDate, paginationQuery, shortText } from "./common"
 
 const optionalText = z.string().trim().min(1).max(100)
@@ -68,9 +69,27 @@ export const listEmployeesQuerySchema = paginationQuery
       .enum(["true", "false"])
       .transform((value) => value === "true")
       .optional(),
+    // DECISION: the list is NOT filtered to ACTIVE by default. Terminated
+    // employees were visible here before termination existed, and silently
+    // hiding rows from an endpoint that used to return them is the more
+    // surprising behaviour of the two. Callers narrow explicitly.
+    status: z.enum(EMPLOYEE_STATUSES).optional(),
     search: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
+
+/**
+ * `DELETE /employees/:id` is a termination, so it carries an optional calendar
+ * day: the last day of employment defaults to today, but a departure recorded
+ * after the fact needs the day it actually happened.
+ */
+export const terminateEmployeeSchema = z
+  .object({
+    terminatedOn: isoDate.optional(),
+  })
+  .strict()
+
+export type TerminateEmployeeInput = z.infer<typeof terminateEmployeeSchema>
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>
 

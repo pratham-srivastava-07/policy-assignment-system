@@ -34,8 +34,21 @@ export const AUDIT_ACTIONS = {
   POLICY_DELETED: "policy.deleted",
 
   RULE_CREATED: "rule.created",
+  RULE_UPDATED: "rule.updated",
   RULE_ENABLED: "rule.enabled",
   RULE_DISABLED: "rule.disabled",
+  RULE_PRIORITY_CHANGED: "rule.priority_changed",
+  RULE_DELETED: "rule.deleted",
+
+  OVERRIDE_CREATED: "override.created",
+  OVERRIDE_DELETED: "override.deleted",
+
+  EMPLOYEE_TERMINATED: "employee.terminated",
+
+  ASSIGNMENT_CREATED: "assignment.created",
+  ASSIGNMENT_ENDED: "assignment.ended",
+
+  RECONCILIATION_RAN: "reconciliation.ran",
 } as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS]
@@ -74,8 +87,21 @@ export const OUTBOX_EVENT_TYPES = {
   // Rule changes fan out to a population rather than one employee: the worker
   // resolves who is affected from the rule's own conditions.
   RULE_CREATED: "rule.created",
+  RULE_UPDATED: "rule.updated",
   RULE_ENABLED: "rule.enabled",
   RULE_DISABLED: "rule.disabled",
+  RULE_PRIORITY_CHANGED: "rule.priority_changed",
+  RULE_DELETED: "rule.deleted",
+
+  OVERRIDE_CREATED: "override.created",
+  OVERRIDE_DELETED: "override.deleted",
+
+  EMPLOYEE_TERMINATED: "employee.terminated",
+
+  ASSIGNMENT_CREATED: "assignment.created",
+  ASSIGNMENT_ENDED: "assignment.ended",
+
+  RECONCILIATION_RAN: "reconciliation.ran",
 } as const
 
 export type OutboxEventType =
@@ -127,3 +153,40 @@ export const PASSWORD_SALT_ROUNDS = 12
 export const DEFAULT_PAGE_SIZE = 25
 
 export const MAX_PAGE_SIZE = 100
+
+/**
+ * Default priority bands, one per rule type.
+ *
+ * These are used for exactly two things and nothing else:
+ *
+ *   1. the priority a rule gets when it is created WITHOUT an explicit one;
+ *   2. the second key of the resolution sort, so that two rules that were given
+ *      the same explicit priority still order deterministically.
+ *
+ * Priority itself is the sole authority for who wins. A DEPARTMENT rule at
+ * priority 900 beats a MANUAL rule at priority 100 — the band does not
+ * re-enter the comparison once the numbers differ. The bands only encode what a
+ * sensible starting number looks like for each dimension.
+ */
+export const RULE_TYPE_PRIORITY_BANDS = {
+  MANUAL: 1000,
+  ROLE: 800,
+  DEPARTMENT: 600,
+  LOCATION: 400,
+  TENURE: 300,
+  GROUP: 200,
+  DEFAULT: 100,
+} as const
+
+export type RuleTypePriorityBand =
+  (typeof RULE_TYPE_PRIORITY_BANDS)[keyof typeof RULE_TYPE_PRIORITY_BANDS]
+
+/**
+ * The `policy_categories.key` that the `/access` endpoints read.
+ *
+ * Application access is derived like every other assignment — there is no way to
+ * write an access assignment directly. `/access` is a filtered view over the
+ * assignments in this category, and granting access means creating a MANUAL
+ * override rule that produces a policy inside it.
+ */
+export const APPLICATION_ACCESS_CATEGORY_KEY = "application_access"

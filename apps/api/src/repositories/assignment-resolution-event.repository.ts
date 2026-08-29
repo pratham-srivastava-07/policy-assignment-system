@@ -1,5 +1,17 @@
-import { AssignmentResolutionEvent, Prisma, PrismaClass } from "@policy/db"
+import {
+  AssignmentResolutionEvent,
+  Prisma,
+  PrismaClass,
+  ResolutionDecision,
+} from "@policy/db"
 import { TxClient } from "../interfaces/db"
+
+/** A decision row joined to the rule text that produced it. */
+export type ResolutionEventWithRule = Prisma.AssignmentResolutionEventGetPayload<{
+  include: {
+    ruleVersionRow: true
+  }
+}>
 
 export interface CreateResolutionEventRecord {
   employeeId: string
@@ -9,7 +21,7 @@ export interface CreateResolutionEventRecord {
   ruleVersion: number
   policyId: string
   categoryId: string
-  decision: string
+  decision: ResolutionDecision
   reason: string
   evaluatedAt: Date
 }
@@ -77,17 +89,49 @@ class AssignmentResolutionEventRepository {
     })
   }
 
+  /**
+   * Every decision written by ONE evaluation.
+   *
+   * The trail behind an assignment is not just the rows that name it — the rules
+   * that lost point at no assignment at all. They are tied together by the
+   * instant the engine ran, which is what this reads on.
+   */
+  async findForEvaluation(
+    organizationId: string,
+    employeeId: string,
+    evaluatedAt: Date,
+    tx?: TxClient,
+  ): Promise<ResolutionEventWithRule[]> {
+
+    return this.db(tx).assignmentResolutionEvent.findMany({
+      where: {
+        organizationId,
+        employeeId,
+        evaluatedAt,
+      },
+      include: {
+        ruleVersionRow: true,
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    })
+  }
+
   /** "Why does this specific assignment exist?" — drill-down from a row. */
   async findForAssignment(
     organizationId: string,
     assignmentId: string,
     tx?: TxClient,
-  ): Promise<AssignmentResolutionEvent[]> {
+  ): Promise<ResolutionEventWithRule[]> {
 
     return this.db(tx).assignmentResolutionEvent.findMany({
       where: {
         organizationId,
         assignmentId,
+      },
+      include: {
+        ruleVersionRow: true,
       },
       orderBy: {
         evaluatedAt: "desc",

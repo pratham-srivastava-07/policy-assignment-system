@@ -15,8 +15,10 @@ import {
   todayIsoDate,
 } from "@policy/shared"
 import {
+  AssignmentRepository,
   AuditEventRepository,
   EmployeeAttributeHistoryRepository,
+  EmployeeGroupRepository,
   EmployeeRepository,
   OutboxEventRepository,
 } from "../repositories"
@@ -60,6 +62,8 @@ export class EmployeeService implements EmployeeServiceInterface {
   constructor(
     private employees: EmployeeRepository,
     private history: EmployeeAttributeHistoryRepository,
+    private groups: EmployeeGroupRepository,
+    private assignments: AssignmentRepository,
     private audit: AuditEventRepository,
     private outbox: OutboxEventRepository,
   ) {}
@@ -207,23 +211,78 @@ export class EmployeeService implements EmployeeServiceInterface {
     return this.applyUpdate(organizationId, actorId, id, patch, effectiveFrom)
   }
 
-  async delete(organizationId: string, actorId: string, id: string): Promise<EmployeeDTO> {
+  /**
+   * Termination — what `DELETE /employees/:id` does.
+   *
+   * Deleting an employee row would take the assignments, resolution events and
+   * attribute history with it, and an assignment that cannot name the person it
+   * applied to cannot be explained. So the row stays and the employment ends:
+   * status flips, the termination date is recorded, and every open group
+   * membership and assignment is end-dated on the same day.
+   *
+   * From that day on the employee is excluded from resolution entirely.
+   */
+  async terminate(
+    organizationId: string,
+    actorId: string,
+    id: string,
+    terminatedOnInput?: string,
+  ): Promise<EmployeeDTO> {
 
     const employee = await this.requireEmployee(organizationId, id)
 
-    await this.prisma.$transaction(async (tx) => {
+    if (employee.status === "TERMINATED") {
 
-      // Audit and outbox rows are written BEFORE the delete so the cascade cannot
-      // take the trail with it; `audit_events.entity_id` is deliberately not a
-      // foreign key for the same reason.
+      throw new AppError(
+        "This employee has already been terminated",
+        409,
+        ERROR_CODES.CONFLICT,
+      )
+    }
+
+    const terminatedOn = fromIsoDate(terminatedOnInput ?? todayIsoDate())
+
+    const after = await this.prisma.$transaction(async (tx) => {
+
+      const terminated = await this.employees.terminate(organizationId, id, terminatedOn, tx)
+
+      if (terminated === 0) {
+
+        throw new AppError("Employee not found", 404, ERROR_CODES.NOT_FOUND)
+      }
+
+      // Everything derived from employment ends with it, on the same calendar
+      // day. `effectiveTo` is exclusive, so the last day the employee held these
+      // is the day before the termination date.
+      const memberships = await this.groups.endAllOpenForEmployee(id, terminatedOn, tx)
+      const assignments = await this.assignments.closeAllOpenForEmployee(
+        organizationId,
+        id,
+        terminatedOn,
+        tx,
+      )
+
+      const row = await this.employees.findById(organizationId, id, tx)
+
+      if (!row) {
+
+        throw new AppError("Employee not found", 404, ERROR_CODES.NOT_FOUND)
+      }
+
       await this.audit.record(
         organizationId,
         {
           actorId,
-          action: AUDIT_ACTIONS.EMPLOYEE_DELETED,
+          action: AUDIT_ACTIONS.EMPLOYEE_TERMINATED,
           entityType: AUDIT_ENTITY_TYPES.EMPLOYEE,
-          entityId: employee.id,
+          entityId: id,
           beforeState: this.auditSnapshot(employee),
+          afterState: this.auditSnapshot(row),
+          metadata: {
+            terminatedOn: toIsoDate(terminatedOn),
+            endedGroupMemberships: memberships,
+            endedAssignments: assignments,
+          },
         },
         tx,
       )
@@ -231,25 +290,21 @@ export class EmployeeService implements EmployeeServiceInterface {
       await this.outbox.enqueue(
         organizationId,
         {
-          eventType: OUTBOX_EVENT_TYPES.EMPLOYEE_DELETED,
+          eventType: OUTBOX_EVENT_TYPES.EMPLOYEE_TERMINATED,
           aggregateType: OUTBOX_AGGREGATE_TYPES.EMPLOYEE,
-          aggregateId: employee.id,
+          aggregateId: id,
           payload: {
-            employeeId: employee.id,
+            employeeId: id,
+            terminatedOn: toIsoDate(terminatedOn),
           },
         },
         tx,
       )
 
-      const deleted = await this.employees.delete(organizationId, id, tx)
-
-      if (deleted === 0) {
-
-        throw new AppError("Employee not found", 404, ERROR_CODES.NOT_FOUND)
-      }
+      return row
     })
 
-    return toEmployeeDTO(employee)
+    return toEmployeeDTO(after)
   }
 
   async getAttributeHistory(
@@ -483,6 +538,8 @@ export class EmployeeService implements EmployeeServiceInterface {
       state: employee.state,
       country: employee.country,
       isManager: employee.isManager,
+      status: employee.status,
+      terminatedOn: employee.terminatedOn ? toIsoDate(employee.terminatedOn) : null,
     }
   }
 }

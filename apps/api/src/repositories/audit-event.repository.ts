@@ -13,6 +13,17 @@ export interface CreateAuditEventRecord {
   metadata?: unknown
 }
 
+/** Filters the audit feed may narrow on. */
+export interface AuditEventFilters {
+  entityType?: string
+  entityId?: string
+  actorId?: string
+  /** Inclusive lower bound on `created_at`. */
+  from?: Date
+  /** Exclusive upper bound on `created_at`. */
+  to?: Date
+}
+
 /**
  * The who / what / when / before / after log.
  *
@@ -83,6 +94,58 @@ class AuditEventRepository {
       take: options.limit,
       skip: options.offset,
     })
+  }
+
+  /** The filtered feed behind `GET /audit-events`. */
+  async findMany(
+    organizationId: string,
+    filters: AuditEventFilters,
+    options: { limit: number; offset: number },
+    tx?: TxClient,
+  ): Promise<AuditEvent[]> {
+
+    return this.db(tx).auditEvent.findMany({
+      where: this.buildWhere(organizationId, filters),
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: options.limit,
+      skip: options.offset,
+    })
+  }
+
+  async count(
+    organizationId: string,
+    filters: AuditEventFilters,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    return this.db(tx).auditEvent.count({
+      where: this.buildWhere(organizationId, filters),
+    })
+  }
+
+  private buildWhere(
+    organizationId: string,
+    filters: AuditEventFilters,
+  ): Prisma.AuditEventWhereInput {
+
+    const where: Prisma.AuditEventWhereInput = {
+      organizationId,
+      ...(filters.entityType !== undefined && { entityType: filters.entityType }),
+      ...(filters.entityId !== undefined && { entityId: filters.entityId }),
+      ...(filters.actorId !== undefined && { actorId: filters.actorId }),
+    }
+
+    if (filters.from !== undefined || filters.to !== undefined) {
+
+      where.createdAt = {
+        ...(filters.from !== undefined && { gte: filters.from }),
+        ...(filters.to !== undefined && { lt: filters.to }),
+      }
+    }
+
+    return where
   }
 
   /** The org-wide activity feed. */

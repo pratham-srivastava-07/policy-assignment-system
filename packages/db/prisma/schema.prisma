@@ -91,6 +91,26 @@ enum OrganizationRole {
   EMPLOYEE
 }
 
+/// The outcome recorded for one rule in one evaluation — winners and losers
+/// alike. This is the decision vocabulary the Assignment Engine writes into
+/// `assignment_resolution_events.decision`.
+enum ResolutionDecision {
+  MATCHED_WON
+  MATCHED_LOST
+  NOT_MATCHED
+  SKIPPED_DISABLED
+  SKIPPED_OUT_OF_WINDOW
+  SKIPPED_POLICY_INACTIVE
+}
+
+/// Employment lifecycle. Employees are never hard-deleted — a departure is a
+/// status change plus a termination date, so the assignment history hanging off
+/// the row survives. TERMINATED employees are excluded from resolution.
+enum EmployeeStatus {
+  ACTIVE
+  TERMINATED
+}
+
 /// Transactional-outbox row lifecycle. Rows are written inside the same
 /// transaction as the state change that caused them; a relay (not built yet)
 /// moves PENDING rows onto the queue.
@@ -226,6 +246,14 @@ model Employee {
   /// because this schema models no org chart (see report — open question).
   isManager Boolean @default(false) @map("is_manager")
 
+  /// Employment lifecycle. Replaces hard deletion: `DELETE /employees/:id` is a
+  /// termination, which sets this and `terminatedOn` and end-dates every open
+  /// group membership and assignment.
+  status EmployeeStatus @default(ACTIVE)
+
+  /// The calendar day employment ended. Set only when `status` is TERMINATED.
+  terminatedOn DateTime? @map("terminated_on") @db.Date
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -251,6 +279,10 @@ model Employee {
   @@index([organizationId, role])
   // Tenure thresholds ("2+ years") become a range scan on hire_date.
   @@index([organizationId, hireDate])
+  // "every active employee in this org" — the population sweep that
+  // /rules/:id/matching-employees and /rules/simulate run over, and the filter
+  // that keeps terminated employees out of resolution.
+  @@index([organizationId, status])
   @@map("employees")
 }
 
@@ -511,23 +543,22 @@ model Assignment {
 /// a query instead of an archaeology exercise: the losing rules and the reason
 /// they lost are recorded, not just the winner.
 model AssignmentResolutionEvent {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  employeeId     String   @map("employee_id") @db.Uuid
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  employeeId     String             @map("employee_id") @db.Uuid
   /// NULL when the evaluated rule did not produce an assignment (it lost, or the
   /// assignment was removed).
-  assignmentId   String?  @map("assignment_id") @db.Uuid
-  ruleId         String   @map("rule_id") @db.Uuid
-  ruleVersion    Int      @map("rule_version")
-  policyId       String   @map("policy_id") @db.Uuid
-  categoryId     String   @map("category_id") @db.Uuid
-  /// Outcome for this rule in this evaluation. Left as free text: the engine
-  /// that writes it is not built yet and its decision vocabulary is undecided.
-  decision       String
+  assignmentId   String?            @map("assignment_id") @db.Uuid
+  ruleId         String             @map("rule_id") @db.Uuid
+  ruleVersion    Int                @map("rule_version")
+  policyId       String             @map("policy_id") @db.Uuid
+  categoryId     String             @map("category_id") @db.Uuid
+  /// Outcome for this rule in this evaluation.
+  decision       ResolutionDecision
   reason         String
   /// When the engine ran — an instant, not an effective date.
-  evaluatedAt    DateTime @map("evaluated_at") @db.Timestamptz(6)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  evaluatedAt    DateTime           @map("evaluated_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)

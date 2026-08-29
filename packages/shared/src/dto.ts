@@ -1,5 +1,13 @@
-import { Cardinality, OrganizationRole, PolicyStatus, RuleType } from "./enums"
-import { RuleConditions } from "./conditions"
+import {
+  Cardinality,
+  EmployeeStatus,
+  OrganizationRole,
+  PolicyStatus,
+  ResolutionDecision,
+  ResolutionStatus,
+  RuleType,
+} from "./enums"
+import { ConditionClause, RuleConditions } from "./conditions"
 import { TrackedEmployeeAttribute } from "./constants"
 
 /**
@@ -112,6 +120,9 @@ export interface EmployeeDTO {
   state: string | null
   country: string | null
   isManager: boolean
+  status: EmployeeStatus
+  /** The day employment ended. Set only when `status` is TERMINATED. */
+  terminatedOn: IsoDate | null
   /** Whole days between `hireDate` and today. Derived on read, never stored. */
   tenureDays: number
   createdAt: IsoDateTime
@@ -236,4 +247,124 @@ export interface AuditEventDTO {
   afterState: unknown
   metadata: unknown
   createdAt: IsoDateTime
+}
+
+// ---------------------------------------------------------------------------
+// Assignments and explanations
+// ---------------------------------------------------------------------------
+
+export interface AssignmentDTO {
+  id: string
+  organizationId: string
+  employeeId: string
+  policyId: string
+  policyName: string
+  categoryId: string
+  categoryKey: string
+  categoryName: string
+  cardinality: Cardinality
+  sourceRuleId: string
+  sourceRuleVersion: number
+  sourceRuleName: string
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  resolutionStatus: ResolutionStatus
+  resolutionReason: string
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+/**
+ * One rule the engine considered, and what became of it.
+ *
+ * The losers are the point: a trail that only carried the winner could not
+ * answer "why did the other rule not apply?".
+ */
+export interface ResolutionTrailEntryDTO {
+  ruleId: string
+  ruleVersion: number
+  ruleName: string
+  ruleType: RuleType
+  priority: number
+  policyId: string
+  categoryId: string
+  decision: ResolutionDecision
+  reason: string
+  /** The clauses that held. Empty for a DEFAULT or MANUAL rule. */
+  matchedClauses: ConditionClause[]
+  /** The first clause that did not hold, when `decision` is NOT_MATCHED. */
+  failedClause: ConditionClause | null
+}
+
+/** What the engine decided for one policy category. */
+export interface CategoryResolutionDTO {
+  categoryId: string
+  categoryKey: string
+  categoryName: string
+  cardinality: Cardinality
+  /** One entry for SINGLE, zero or more for MULTIPLE. */
+  winners: ResolvedPolicyDTO[]
+  trail: ResolutionTrailEntryDTO[]
+}
+
+/** A policy the engine says should apply, before it is materialized. */
+export interface ResolvedPolicyDTO {
+  policyId: string
+  policyName: string
+  categoryId: string
+  categoryKey: string
+  cardinality: Cardinality
+  ruleId: string
+  ruleVersion: number
+  ruleName: string
+  ruleType: RuleType
+  priority: number
+  resolutionStatus: ResolutionStatus
+  reason: string
+}
+
+/** The whole picture for one employee on one day. */
+export interface ResolutionDTO {
+  employeeId: string
+  asOf: IsoDate
+  categories: CategoryResolutionDTO[]
+}
+
+/** "Why does this assignment exist?" */
+export interface AssignmentExplanationDTO {
+  assignment: AssignmentDTO
+  /** The rule text as it stood when the assignment was made. */
+  sourceRuleVersion: RuleVersionDTO
+  /** Every rule considered in the evaluation that produced this assignment. */
+  trail: ResolutionTrailEntryDTO[]
+}
+
+/** The result of materializing a resolution: what actually changed. */
+export interface ReconciliationResultDTO {
+  employeeId: string
+  asOf: IsoDate
+  added: AssignmentDTO[]
+  removed: AssignmentDTO[]
+  unchanged: AssignmentDTO[]
+}
+
+/** A hypothetical change, run through the engine, writing nothing. */
+export interface PreviewDTO {
+  employeeId: string
+  asOf: IsoDate
+  added: ResolvedPolicyDTO[]
+  removed: ResolvedPolicyDTO[]
+  unchanged: ResolvedPolicyDTO[]
+  resolution: ResolutionDTO
+}
+
+/** An employee a rule would match, with the clauses that made it match. */
+export interface MatchingEmployeeDTO {
+  employeeId: string
+  name: string
+  email: string
+  matched: boolean
+  reason: string
+  matchedClauses: ConditionClause[]
+  failedClause: ConditionClause | null
 }

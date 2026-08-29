@@ -163,6 +163,78 @@ class EmployeeGroupRepository {
     })
   }
 
+  /**
+   * The same lookup for a batch of employees, as a map. The population sweeps
+   * behind /rules/:id/matching-employees and /rules/simulate need every
+   * employee's groups at once; issuing one query per employee would not survive
+   * an organization of any size.
+   */
+  async findGroupIdsForEmployees(
+    employeeIds: string[],
+    asOf: Date,
+    tx?: TxClient,
+  ): Promise<Map<string, string[]>> {
+
+    const groups = new Map<string, string[]>()
+
+    if (employeeIds.length === 0) {
+
+      return groups
+    }
+
+    const rows = await this.db(tx).employeeGroup.findMany({
+      where: {
+        employeeId: {
+          in: employeeIds,
+        },
+        ...this.effectiveOn(asOf),
+      },
+      select: {
+        employeeId: true,
+        groupId: true,
+      },
+    })
+
+    for (const row of rows) {
+
+      const existing = groups.get(row.employeeId)
+
+      if (existing) {
+
+        existing.push(row.groupId)
+
+        continue
+      }
+
+      groups.set(row.employeeId, [row.groupId])
+    }
+
+    return groups
+  }
+
+  /**
+   * End-date every open membership an employee holds. Termination uses this:
+   * someone who has left the company is no longer in any of its groups.
+   */
+  async endAllOpenForEmployee(
+    employeeId: string,
+    effectiveTo: Date,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    const result = await this.db(tx).employeeGroup.updateMany({
+      where: {
+        employeeId,
+        effectiveTo: null,
+      },
+      data: {
+        effectiveTo,
+      },
+    })
+
+    return result.count
+  }
+
   /** Removal: close the row rather than delete it. */
   async endMembership(id: string, effectiveTo: Date, tx?: TxClient): Promise<EmployeeGroup> {
 

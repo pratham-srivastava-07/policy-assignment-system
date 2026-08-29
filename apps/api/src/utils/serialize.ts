@@ -11,6 +11,7 @@ import {
   User,
 } from "@policy/db"
 import {
+  AssignmentDTO,
   AuditEventDTO,
   EmployeeAttributeHistoryDTO,
   EmployeeDTO,
@@ -20,13 +21,16 @@ import {
   PolicyDTO,
   PublicOrganization,
   PublicUser,
+  ResolutionTrailEntryDTO,
+  ResolvedPolicyDTO,
   RuleConditions,
   RuleDTO,
   RuleVersionDTO,
   tenureDaysAsOf,
   toIsoDate,
 } from "@policy/shared"
-import { EmployeeGroupWithEmployee } from "../repositories"
+import { AssignmentWithContext, EmployeeGroupWithEmployee } from "../repositories"
+import { ResolvedPolicy, RuleTrailEntry } from "../engine"
 
 /**
  * Row -> transport mappers.
@@ -70,6 +74,8 @@ export const toEmployeeDTO = (employee: Employee, asOf: Date = new Date()): Empl
   state: employee.state,
   country: employee.country,
   isManager: employee.isManager,
+  status: employee.status,
+  terminatedOn: employee.terminatedOn ? toIsoDate(employee.terminatedOn) : null,
   tenureDays: tenureDaysAsOf(employee.hireDate, asOf),
   createdAt: employee.createdAt.toISOString(),
   updatedAt: employee.updatedAt.toISOString(),
@@ -175,4 +181,63 @@ export const toAuditEventDTO = (event: AuditEvent): AuditEventDTO => ({
   afterState: event.afterState,
   metadata: event.metadata,
   createdAt: event.createdAt.toISOString(),
+})
+
+/**
+ * An assignment, flattened with the names a reader needs.
+ *
+ * The policy, category and source rule version travel with the row because an
+ * assignment identified only by uuids explains nothing — and explaining is what
+ * this table is for.
+ */
+export const toAssignmentDTO = (assignment: AssignmentWithContext): AssignmentDTO => ({
+  id: assignment.id,
+  organizationId: assignment.organizationId,
+  employeeId: assignment.employeeId,
+  policyId: assignment.policyId,
+  policyName: assignment.policy.name,
+  categoryId: assignment.categoryId,
+  categoryKey: assignment.category.key,
+  categoryName: assignment.category.name,
+  cardinality: assignment.cardinality,
+  sourceRuleId: assignment.sourceRuleId,
+  sourceRuleVersion: assignment.sourceRuleVersion,
+  sourceRuleName: assignment.sourceRuleVersionRow.name,
+  effectiveFrom: toIsoDate(assignment.effectiveFrom),
+  effectiveTo: assignment.effectiveTo ? toIsoDate(assignment.effectiveTo) : null,
+  resolutionStatus: assignment.resolutionStatus,
+  resolutionReason: assignment.resolutionReason,
+  createdAt: assignment.createdAt.toISOString(),
+  updatedAt: assignment.updatedAt.toISOString(),
+})
+
+/** One rule the engine considered, on its way out over HTTP. */
+export const toTrailEntryDTO = (entry: RuleTrailEntry): ResolutionTrailEntryDTO => ({
+  ruleId: entry.ruleId,
+  ruleVersion: entry.ruleVersion,
+  ruleName: entry.ruleName,
+  ruleType: entry.ruleType,
+  priority: entry.priority,
+  policyId: entry.policyId,
+  categoryId: entry.categoryId,
+  decision: entry.decision,
+  reason: entry.reason,
+  matchedClauses: entry.matchedClauses,
+  failedClause: entry.failedClause,
+})
+
+/** A policy the engine says should apply, before anything is materialized. */
+export const toResolvedPolicyDTO = (resolved: ResolvedPolicy): ResolvedPolicyDTO => ({
+  policyId: resolved.policyId,
+  policyName: resolved.policyName,
+  categoryId: resolved.categoryId,
+  categoryKey: resolved.categoryKey,
+  cardinality: resolved.cardinality,
+  ruleId: resolved.ruleId,
+  ruleVersion: resolved.ruleVersion,
+  ruleName: resolved.ruleName,
+  ruleType: resolved.ruleType,
+  priority: resolved.priority,
+  resolutionStatus: resolved.resolutionStatus,
+  reason: resolved.reason,
 })

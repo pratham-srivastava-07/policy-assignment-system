@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "target": "es2016",
+    // Declared explicitly rather than inherited from `target`: this package
+    // uses Object.values (ES2017). Relying on @types/node to widen the lib
+    // as a side effect makes the build fragile to a dependency bump.
+    "lib": ["ES2020"],
     "module": "commonjs",
     "moduleResolution": "node",
     "rootDir": "./src",

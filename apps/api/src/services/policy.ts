@@ -226,9 +226,13 @@ export class PolicyCategoryService implements PolicyCategoryServiceInterface {
  * Policies.
  *
  * A policy on its own assigns nothing — rules do that — so no write here enqueues
- * reconciliation. Whether archiving a policy should stop its rules from producing
- * assignments is an open product decision (D6 in docs/apis.md); until it is
- * answered, `status` is stored and reported but gates nothing.
+ * reconciliation.
+ *
+ * `status` DOES gate evaluation: only ACTIVE policies are resolved. A rule that
+ * points at a DRAFT or ARCHIVED policy is skipped and the skip is recorded as
+ * SKIPPED_POLICY_INACTIVE, so archiving a policy stops it producing new
+ * assignments without deleting anything or breaking the explanation of the
+ * assignments it already produced.
  */
 export class PolicyService implements PolicyServiceInterface {
 
