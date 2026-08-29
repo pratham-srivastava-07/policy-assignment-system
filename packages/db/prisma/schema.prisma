@@ -1,0 +1,642 @@
+// ============================================================================
+// Warp — Policy Assignment System
+// ============================================================================
+//
+// Source of truth for the tables listed in docs/database.md.
+//
+// Conventions used throughout this file:
+//
+//   * Models are PascalCase and @@map to snake_case tables.
+//   * Fields are camelCase and @map to snake_case columns.
+//   * Primary keys are UUIDs (docs/database.md specifies `UUID PK`).
+//   * Effective dating uses `@db.Date` — an org-local calendar day, never a
+//     timestamp. The point-in-time predicate everywhere in this system is:
+//
+//         effective_from <= :asOf AND (effective_to IS NULL OR effective_to > :asOf)
+//
+//     `effective_to` is therefore EXCLUSIVE and NULL means open-ended.
+//   * Row bookkeeping (`createdAt` / `updatedAt` / `evaluatedAt` / queue
+//     timestamps) stays TIMESTAMPTZ — those are instants, not calendar days.
+//   * Tenure is NEVER stored. It is day arithmetic between `hireDate` and the
+//     as-of date, computed at evaluation time.
+//   * Every org-scoped table carries `organizationId`. Multi-tenancy is a hard
+//     security boundary: the value is always derived from the authenticated
+//     session, never from client input.
+//
+// Two constraints in this schema cannot be expressed in Prisma schema language
+// and are appended by hand to the generated migration SQL:
+//
+//   1. policy_rules: CHECK (employee_id IS NOT NULL) = (rule_type = 'MANUAL')
+//   2. assignments:  partial UNIQUE index enforcing SINGLE cardinality
+//
+// See packages/db/prisma/migrations/*/migration.sql.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+/// How many policies from a single category an employee may hold at one time.
+enum Cardinality {
+  SINGLE
+  MULTIPLE
+}
+
+/// Lifecycle of a policy.
+enum PolicyStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+/// The dimension a rule matches on.
+///
+/// MANUAL is an explicit, single-employee override — it is modelled as a rule
+/// (not a separate table) so that `assignments.source_rule_id` is always set
+/// and every assignment has exactly one explainable source.
+///
+/// DEFAULT is the organization-wide catch-all ("all employees get X").
+enum RuleType {
+  MANUAL
+  ROLE
+  DEPARTMENT
+  LOCATION
+  TENURE
+  GROUP
+  DEFAULT
+}
+
+/// Whether an assignment was produced by automatic rule evaluation or by an
+/// explicit manual override. Both cases still point at a source rule.
+enum ResolutionStatus {
+  AUTOMATIC
+  MANUAL_OVERRIDE
+}
+
+/// Roles from docs/architecture.md § "Authorization and RBAC".
+/// The permission matrix itself is not modelled here.
+enum OrganizationRole {
+  COMPANY_ADMIN
+  HR_ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+/// Transactional-outbox row lifecycle. Rows are written inside the same
+/// transaction as the state change that caused them; a relay (not built yet)
+/// moves PENDING rows onto the queue.
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+// ============================================================================
+// Tenancy and identity
+// ============================================================================
+
+/// A company. Every org-scoped row hangs off this.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships      OrganizationMembership[]
+  sessions         Session[]
+  employees        Employee[]
+  groups           Group[]
+  policyCategories PolicyCategory[]
+  policies         Policy[]
+  policyRules      PolicyRule[]
+  assignments      Assignment[]
+  resolutionEvents AssignmentResolutionEvent[]
+  auditEvents      AuditEvent[]
+  outboxEvents     OutboxEvent[]
+
+  @@map("organizations")
+}
+
+/// A login identity. Users are global (a person may belong to several orgs via
+/// OrganizationMembership); `employeeId` optionally links the login to the
+/// employee record it represents.
+///
+/// `employeeId` is nullable — a user may exist without an employee record — and
+/// UNIQUE — a user resolves to at most one employee.
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  employeeId   String?  @unique @map("employee_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee            Employee?                  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  memberships         OrganizationMembership[]
+  sessions            Session[]
+  auditEvents         AuditEvent[]
+  attributeChanges    EmployeeAttributeHistory[]
+  ruleVersionsCreated PolicyRuleVersion[]
+
+  @@map("users")
+}
+
+/// Which organizations a user belongs to, and in what role.
+model OrganizationMembership {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  role           OrganizationRole
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // A user has exactly one role per organization.
+  @@unique([userId, organizationId])
+  // "list the members of this org" — the [userId, ...] unique above already
+  // serves the reverse lookup.
+  @@index([organizationId])
+  @@map("organization_memberships")
+}
+
+/// Stateful auth. The raw bearer token is never stored — only its hash.
+/// Logout sets `revokedAt`; a session is valid while
+/// `revokedAt IS NULL AND expiresAt > now()`.
+model Session {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // "revoke every session for this user" and "list my sessions".
+  @@index([userId])
+  // Expired-session sweeping.
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// Workforce
+// ============================================================================
+
+/// An employee. Every column here that a rule can match on is a first-class
+/// attribute — the condition vocabulary in @policy/shared maps 1:1 onto these
+/// plus `tenureDays` (derived from `hireDate`) and `groupId` (via EmployeeGroup).
+///
+/// docs/database.md listed a `groups` column on this table. It is deliberately
+/// absent: group membership is effective-dated and therefore lives in the
+/// `employee_groups` join table.
+model Employee {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  email          String
+  hireDate       DateTime @map("hire_date") @db.Date
+  employmentType String   @map("employment_type")
+
+  // Optional context. An employee record can be created before every attribute
+  // is known; rules simply do not match on a NULL attribute.
+  department String?
+  role       String?
+  location   String?
+  state      String?
+  country    String?
+
+  /// Backs the `isManager` condition attribute. Stored rather than derived
+  /// because this schema models no org chart (see report — open question).
+  isManager Boolean @default(false) @map("is_manager")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user             User?
+  groupMemberships EmployeeGroup[]
+  assignments      Assignment[]
+  manualRules      PolicyRule[]
+  resolutionEvents AssignmentResolutionEvent[]
+  attributeHistory EmployeeAttributeHistory[]
+
+  // Employee email is unique within an organization, not globally.
+  @@unique([organizationId, email])
+  // The indexes below serve the "which employees match this rule?" population
+  // queries. One composite per documented rule dimension that has a worked
+  // example in the docs. `country`, `location` and `is_manager` are
+  // deliberately NOT indexed: no documented query leads with them, and
+  // `is_manager` is a two-value column where an index would not pay for itself.
+  // Postgres can still bitmap-AND the indexes below for multi-clause rules.
+  @@index([organizationId, department])
+  @@index([organizationId, state])
+  @@index([organizationId, employmentType])
+  @@index([organizationId, role])
+  // Tenure thresholds ("2+ years") become a range scan on hire_date.
+  @@index([organizationId, hireDate])
+  @@map("employees")
+}
+
+/// A named collection of employees. Groups are a rule dimension (RuleType.GROUP)
+/// and a many-to-many relationship in their own right.
+model Group {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      EmployeeGroup[]
+
+  // Group names are unique per org; the leading column also serves
+  // "list this org's groups".
+  @@unique([organizationId, name])
+  @@map("groups")
+}
+
+/// Effective-dated group membership.
+///
+/// docs/database.md specified PRIMARY KEY (employee_id, group_id). That is
+/// incompatible with effective dating — an employee who leaves a group and
+/// rejoins it later needs two rows. The surrogate PK plus the uniqueness of
+/// (employee, group, effective_from) preserves the intent (no duplicate
+/// memberships) while keeping the history.
+model EmployeeGroup {
+  id            String    @id @default(uuid()) @db.Uuid
+  employeeId    String    @map("employee_id") @db.Uuid
+  groupId       String    @map("group_id") @db.Uuid
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, groupId, effectiveFrom])
+  // "who was in group G on date D" — the roster query used when a GROUP rule
+  // changes. The reverse ("which groups is employee E in on date D", used by
+  // every `groupId` condition) is served by the [employeeId, ...] prefix of the
+  // unique constraint above.
+  @@index([groupId, effectiveFrom])
+  @@map("employee_groups")
+}
+
+// ============================================================================
+// Policies
+// ============================================================================
+
+/// A grouping of policies that share an assignment cardinality — "Pay Schedule"
+/// (SINGLE), "Application Access" (MULTIPLE), and so on.
+model PolicyCategory {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  name           String
+  key            String
+  cardinality    Cardinality
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  policies         Policy[]
+  assignments      Assignment[]
+  resolutionEvents AssignmentResolutionEvent[]
+
+  // `key` is the stable machine identifier admins reference; unique per org.
+  @@unique([organizationId, key])
+  @@map("policy_categories")
+}
+
+/// A concrete policy an employee can be assigned.
+model Policy {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  categoryId     String       @map("category_id") @db.Uuid
+  name           String
+  description    String?
+  status         PolicyStatus @default(DRAFT)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category         PolicyCategory              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  rules            PolicyRule[]
+  assignments      Assignment[]
+  resolutionEvents AssignmentResolutionEvent[]
+
+  // Two policies in the same category cannot share a name; the leading columns
+  // also serve "list the policies in this category".
+  @@unique([organizationId, categoryId, name])
+  // Admin policy list, filtered by lifecycle status.
+  @@index([organizationId, status])
+  @@map("policies")
+}
+
+// ============================================================================
+// Rules
+// ============================================================================
+
+/// An assignment rule: "who gets this policy, and when".
+///
+/// `conditions` is a versioned, flat, AND-only envelope:
+///
+///     { "version": 1, "all": [ { "attribute": "department", "op": "eq", "value": "Engineering" } ] }
+///
+/// Every clause in `all` is ANDed. The `version` discriminator exists so that a
+/// nested boolean tree can be introduced later without a migration.
+///
+/// A MANUAL rule is an explicit override for one employee: `employeeId` names
+/// the target and `conditions` is the empty envelope. A CHECK constraint added
+/// in the migration enforces that `employee_id` is set if and only if
+/// `rule_type = 'MANUAL'`.
+model PolicyRule {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  policyId       String    @map("policy_id") @db.Uuid
+  /// Set only for rule_type = MANUAL. See the CHECK constraint in the migration.
+  employeeId     String?   @map("employee_id") @db.Uuid
+  name           String
+  ruleType       RuleType  @map("rule_type")
+  priority       Int
+  conditions     Json
+  enabled        Boolean   @default(true)
+  effectiveFrom  DateTime  @map("effective_from") @db.Date
+  effectiveTo    DateTime? @map("effective_to") @db.Date
+  /// Current version number. Every edit writes a PolicyRuleVersion snapshot and
+  /// bumps this.
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  policy           Policy                      @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  employee         Employee?                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  versions         PolicyRuleVersion[]
+  resolutionEvents AssignmentResolutionEvent[]
+
+  // The assignment engine's main sweep: "every enabled rule in this org that is
+  // in force on date D".
+  @@index([organizationId, enabled, effectiveFrom])
+  // Reconciliation fan-out: "an employee's department changed — which rules
+  // depend on department?" (docs/architecture.md § Reconciliation Worker).
+  @@index([organizationId, ruleType, enabled])
+  // "which rules produce this policy" — used when a policy is edited/archived.
+  @@index([policyId])
+  // "does this employee have a manual override?" — the highest-precedence
+  // lookup in resolution.
+  @@index([employeeId])
+  @@map("policy_rules")
+}
+
+/// Immutable snapshot of a rule at one version.
+///
+/// Assignments reference (rule_id, version) so that an assignment made months
+/// ago can still be explained against the rule text that produced it, even
+/// after the live rule has been edited.
+///
+/// `policyId`, `employeeId` and `name` are snapshotted in addition to the
+/// columns listed in docs/database.md: "a rule begins assigning a different
+/// policy" is an explicitly documented kind of rule change, so a snapshot that
+/// omitted `policy_id` could not reconstruct the original decision.
+model PolicyRuleVersion {
+  id            String    @id @default(uuid()) @db.Uuid
+  ruleId        String    @map("rule_id") @db.Uuid
+  version       Int
+  policyId      String    @map("policy_id") @db.Uuid
+  employeeId    String?   @map("employee_id") @db.Uuid
+  name          String
+  ruleType      RuleType  @map("rule_type")
+  priority      Int
+  conditions    Json
+  enabled       Boolean
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdBy     String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rule             PolicyRule                  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  createdByUser    User?                       @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  assignments      Assignment[]
+  resolutionEvents AssignmentResolutionEvent[]
+
+  // One snapshot per version, and the composite key that Assignment and
+  // AssignmentResolutionEvent point their (rule_id, rule_version) pair at.
+  // Its [ruleId, ...] prefix also serves "show this rule's edit history".
+  @@unique([ruleId, version])
+  @@map("policy_rule_versions")
+}
+
+// ============================================================================
+// Assignments
+// ============================================================================
+
+/// A materialized policy assignment: "this policy applies to this employee over
+/// this date range, because of this rule version".
+///
+/// `sourceRuleId` is NOT NULL — a rule always won, including for manual
+/// overrides, which are themselves rules.
+///
+/// `categoryId` and `cardinality` are denormalized from Policy/PolicyCategory so
+/// that SINGLE cardinality is enforced by a partial unique index in the database
+/// rather than only in application code:
+///
+///     CREATE UNIQUE INDEX assignments_single_current_uniq
+///       ON assignments (organization_id, employee_id, category_id)
+///       WHERE cardinality = 'SINGLE' AND effective_to IS NULL;
+///
+/// Prisma cannot express a partial unique index, so it lives in the migration.
+model Assignment {
+  id                String           @id @default(uuid()) @db.Uuid
+  organizationId    String           @map("organization_id") @db.Uuid
+  employeeId        String           @map("employee_id") @db.Uuid
+  policyId          String           @map("policy_id") @db.Uuid
+  /// Denormalized from policies.category_id.
+  categoryId        String           @map("category_id") @db.Uuid
+  /// Denormalized from policy_categories.cardinality; exists purely so the
+  /// partial unique index above can select the SINGLE rows.
+  cardinality       Cardinality
+  sourceRuleId      String           @map("source_rule_id") @db.Uuid
+  sourceRuleVersion Int              @map("source_rule_version")
+  effectiveFrom     DateTime         @map("effective_from") @db.Date
+  effectiveTo       DateTime?        @map("effective_to") @db.Date
+  resolutionStatus  ResolutionStatus @map("resolution_status")
+  /// Human-readable explanation, e.g. "Priority 100 (Executive rule) beat 50".
+  resolutionReason  String           @map("resolution_reason")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  policy       Policy         @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  category     PolicyCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  /// The rule *version* that produced this assignment. Restricting deletes keeps
+  /// every live assignment explainable.
+  sourceRuleVersionRow PolicyRuleVersion @relation(fields: [sourceRuleId, sourceRuleVersion], references: [ruleId, version], onDelete: Restrict)
+
+  resolutionEvents AssignmentResolutionEvent[]
+
+  // "which policies applied to employee E as of date D" — the primary read.
+  @@index([organizationId, employeeId, effectiveFrom])
+  // "which employees hold policy P".
+  @@index([organizationId, policyId])
+  // "which assignments came from rule R" — the reconciliation fan-out when a
+  // rule is edited, and the composite FK's own lookup index.
+  @@index([sourceRuleId, sourceRuleVersion])
+  @@map("assignments")
+}
+
+/// The decision log the Assignment Engine writes on every evaluation — one row
+/// per rule considered, winners and losers alike.
+///
+/// This is what turns "why does employee X have assignment Y as of date Z?" into
+/// a query instead of an archaeology exercise: the losing rules and the reason
+/// they lost are recorded, not just the winner.
+model AssignmentResolutionEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  employeeId     String   @map("employee_id") @db.Uuid
+  /// NULL when the evaluated rule did not produce an assignment (it lost, or the
+  /// assignment was removed).
+  assignmentId   String?  @map("assignment_id") @db.Uuid
+  ruleId         String   @map("rule_id") @db.Uuid
+  ruleVersion    Int      @map("rule_version")
+  policyId       String   @map("policy_id") @db.Uuid
+  categoryId     String   @map("category_id") @db.Uuid
+  /// Outcome for this rule in this evaluation. Left as free text: the engine
+  /// that writes it is not built yet and its decision vocabulary is undecided.
+  decision       String
+  reason         String
+  /// When the engine ran — an instant, not an effective date.
+  evaluatedAt    DateTime @map("evaluated_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  assignment     Assignment?       @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  rule           PolicyRule        @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  ruleVersionRow PolicyRuleVersion @relation(fields: [ruleId, ruleVersion], references: [ruleId, version], onDelete: Cascade, map: "assignment_resolution_events_rule_version_fkey")
+  policy         Policy            @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  category       PolicyCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // "show me the last evaluation for this employee" — the explainability panel.
+  @@index([organizationId, employeeId, evaluatedAt])
+  // "why does this specific assignment exist" — drill-down from an assignment.
+  @@index([assignmentId])
+  // The composite FK's lookup index; also "every decision this rule drove".
+  @@index([ruleId, ruleVersion])
+  @@map("assignment_resolution_events")
+}
+
+// ============================================================================
+// History and audit
+// ============================================================================
+
+/// Generic who/what/when/before/after log for every meaningful change.
+///
+/// `entityId` is a plain string rather than a foreign key on purpose: the audit
+/// trail must survive deletion of the row it describes.
+model AuditEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// NULL for system-initiated changes (e.g. the reconciliation worker).
+  actorId        String?  @map("actor_id") @db.Uuid
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  beforeState    Json?    @map("before_state")
+  afterState     Json?    @map("after_state")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  // "the change history of this one entity, newest first" — the audit drawer.
+  @@index([organizationId, entityType, entityId, createdAt])
+  // The org-wide audit feed.
+  @@index([organizationId, createdAt])
+  @@map("audit_events")
+}
+
+/// Effective-dated history of a single employee attribute.
+///
+/// This is what lets the system answer "what was this employee's department on
+/// date D?" — which is a prerequisite for resolving assignments as of a past
+/// date, since `employees` only holds the current value.
+///
+/// `attribute` holds a value from the shared condition-attribute vocabulary.
+/// Values are stringified; comparison semantics come from the condition grammar.
+model EmployeeAttributeHistory {
+  id            String    @id @default(uuid()) @db.Uuid
+  employeeId    String    @map("employee_id") @db.Uuid
+  attribute     String
+  oldValue      String?   @map("old_value")
+  newValue      String?   @map("new_value")
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  changedBy     String?   @map("changed_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  changedByUser User?    @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  // "this employee's `department` as of date D", and by prefix both
+  // "this employee's full attribute history" (the GET endpoint) and
+  // "this employee's history for one attribute".
+  @@index([employeeId, attribute, effectiveFrom])
+  @@map("employee_attribute_history")
+}
+
+// ============================================================================
+// Transactional outbox
+// ============================================================================
+
+/// Reconciliation jobs are enqueued by writing a row here inside the same
+/// transaction as the state change that requires reconciliation. A relay
+/// process (NOT built) later moves PENDING rows onto BullMQ.
+///
+/// This removes the dual-write problem: the state change and its job either both
+/// commit or both roll back.
+model OutboxEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  eventType      String       @map("event_type")
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id")
+  payload        Json
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  /// Earliest time the relay may pick this row up; backoff pushes it forward.
+  availableAt    DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
+  processedAt    DateTime?    @map("processed_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // The only hot query on this table: the relay's
+  // "SELECT ... WHERE status = 'PENDING' AND available_at <= now()
+  //  ORDER BY available_at FOR UPDATE SKIP LOCKED".
+  @@index([status, availableAt])
+  // Tracing every job emitted for one aggregate (an employee, a rule).
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}

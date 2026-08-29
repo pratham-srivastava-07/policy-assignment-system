@@ -1,0 +1,239 @@
+import { Cardinality, OrganizationRole, PolicyStatus, RuleType } from "./enums"
+import { RuleConditions } from "./conditions"
+import { TrackedEmployeeAttribute } from "./constants"
+
+/**
+ * Transport contracts.
+ *
+ * These describe what crosses the HTTP boundary — never a Prisma model. Dates
+ * are ISO strings here: effective dates as `YYYY-MM-DD` (a calendar day),
+ * bookkeeping timestamps as full ISO-8601 instants.
+ */
+
+/** `YYYY-MM-DD`. An org-local calendar day, not an instant. */
+export type IsoDate = string
+
+/** Full ISO-8601 instant. */
+export type IsoDateTime = string
+
+/** The response envelope every endpoint returns. */
+export interface ApiSuccess<T> {
+  success: true
+  data: T
+}
+
+export interface ApiFailure {
+  success: false
+  message: string
+  code?: string
+}
+
+export type ApiResponse<T> = ApiSuccess<T> | ApiFailure
+
+/** A page of results. */
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/**
+ * An effective-dated range, closed-open: valid while
+ * `effectiveFrom <= asOf AND (effectiveTo IS NULL OR effectiveTo > asOf)`.
+ */
+export interface EffectivePeriod {
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+/**
+ * The authenticated identity attached to every request.
+ *
+ * `organizationId` comes from the session row and nowhere else — never from a
+ * path, body or query parameter. This is the multi-tenancy boundary.
+ */
+export interface AuthContext {
+  userId: string
+  sessionId: string
+  organizationId: string
+  role: OrganizationRole
+  /** The employee this login represents, if any. */
+  employeeId: string | null
+}
+
+export interface PublicUser {
+  id: string
+  email: string
+  name: string
+  employeeId: string | null
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface PublicOrganization {
+  id: string
+  name: string
+}
+
+export interface AuthSessionDTO {
+  user: PublicUser
+  organization: PublicOrganization
+  role: OrganizationRole
+  /** The bearer token. Returned once, at issue time; only its hash is stored. */
+  token: string
+  expiresAt: IsoDateTime
+}
+
+export interface MeDTO {
+  user: PublicUser
+  organization: PublicOrganization
+  role: OrganizationRole
+}
+
+// ---------------------------------------------------------------------------
+// Employees
+// ---------------------------------------------------------------------------
+
+export interface EmployeeDTO {
+  id: string
+  organizationId: string
+  name: string
+  email: string
+  hireDate: IsoDate
+  employmentType: string
+  department: string | null
+  role: string | null
+  location: string | null
+  state: string | null
+  country: string | null
+  isManager: boolean
+  /** Whole days between `hireDate` and today. Derived on read, never stored. */
+  tenureDays: number
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface EmployeeAttributeHistoryDTO {
+  id: string
+  employeeId: string
+  attribute: TrackedEmployeeAttribute | string
+  oldValue: string | null
+  newValue: string | null
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  changedBy: string | null
+  createdAt: IsoDateTime
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+
+export interface GroupDTO {
+  id: string
+  organizationId: string
+  name: string
+  description: string | null
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface GroupMemberDTO {
+  id: string
+  groupId: string
+  employeeId: string
+  employeeName: string
+  employeeEmail: string
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  createdAt: IsoDateTime
+}
+
+// ---------------------------------------------------------------------------
+// Policies
+// ---------------------------------------------------------------------------
+
+export interface PolicyCategoryDTO {
+  id: string
+  organizationId: string
+  name: string
+  key: string
+  cardinality: Cardinality
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+export interface PolicyDTO {
+  id: string
+  organizationId: string
+  categoryId: string
+  name: string
+  description: string | null
+  status: PolicyStatus
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+// ---------------------------------------------------------------------------
+// Rules
+// ---------------------------------------------------------------------------
+
+export interface RuleDTO {
+  id: string
+  organizationId: string
+  policyId: string
+  /** Set only on MANUAL rules — the single employee the override targets. */
+  employeeId: string | null
+  name: string
+  ruleType: RuleType
+  priority: number
+  conditions: RuleConditions
+  enabled: boolean
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  /** Current version. Each edit writes a snapshot and bumps this. */
+  version: number
+  createdAt: IsoDateTime
+  updatedAt: IsoDateTime
+}
+
+/** An immutable snapshot of a rule, as it stood at one version. */
+export interface RuleVersionDTO {
+  id: string
+  ruleId: string
+  version: number
+  policyId: string
+  employeeId: string | null
+  name: string
+  ruleType: RuleType
+  priority: number
+  conditions: RuleConditions
+  enabled: boolean
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  createdBy: string | null
+  createdAt: IsoDateTime
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+export interface AuditEventDTO {
+  id: string
+  organizationId: string
+  /** Null for system-initiated changes, e.g. the reconciliation worker. */
+  actorId: string | null
+  action: string
+  entityType: string
+  entityId: string
+  beforeState: unknown
+  afterState: unknown
+  metadata: unknown
+  createdAt: IsoDateTime
+}
