@@ -14,6 +14,7 @@ import {
 } from "../validators"
 import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
+import { collectionReadScope } from "../middlewares/permission"
 
 /**
  * Reads over materialized policy state, plus the two engine runs that write
@@ -54,9 +55,14 @@ export class AssignmentController implements IAssignmentController {
       const auth = requireAuthContext(req)
       const query = listAssignmentsQuerySchema.parse(req.query)
 
+      // The batch read names arbitrary employees, so the caller's scope has to
+      // be intersected with what they asked for. Middleware cannot do that —
+      // it is a filter over a list, not a decision about one id.
+      const scope = collectionReadScope(auth)
+
       res.status(200).json({
         success: true,
-        data: await this.service.listForEmployees(auth.organizationId, query),
+        data: await this.service.listForEmployees(auth.organizationId, query, scope),
       })
     } catch (err) {
 

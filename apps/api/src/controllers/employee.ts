@@ -12,6 +12,7 @@ import {
 } from "../validators"
 import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
+import { collectionReadScope } from "../middlewares/permission"
 
 /**
  * Every handler takes its organization from `requireAuthContext(req)` — never
@@ -45,9 +46,14 @@ export class EmployeeController implements IEmployeeController {
       const auth = requireAuthContext(req)
       const query = listEmployeesQuerySchema.parse(req.query)
 
+      // "Which employees may you read?" is a filter, not a yes/no, so middleware
+      // cannot express it. The role decides the scope here; the service puts it
+      // in the WHERE clause.
+      const scope = collectionReadScope(auth)
+
       res.status(200).json({
         success: true,
-        data: await this.service.list(auth.organizationId, query),
+        data: await this.service.list(auth.organizationId, query, scope),
       })
     } catch (err) {
 

@@ -23,13 +23,10 @@ services:
     container_name: policy-redis
     restart: unless-stopped
     ports:
-     - "6379:6379"
+     - "6380:6379"
     volumes:
      - redis-data:/data
     healthcheck:
-      # `redis-cli ping` answers PONG only once the server is accepting
-      # commands, so a worker that waits on this never starts against a socket
-      # that is open but not yet serving.
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s

@@ -9,8 +9,10 @@ import {
 import { requireAuth } from "../middlewares/auth"
 import {
   denySelfScopedRole,
+  requireBackdatePermission,
   requirePermission,
   requireSelfOrPermission,
+  requireSubtreeScope,
 } from "../middlewares/permission"
 import { rateLimit } from "../middlewares/rate-limit"
 
@@ -25,11 +27,16 @@ employeeRouter.post(
   "/",
   rateLimit.write(),
   requirePermission(PERMISSIONS.EMPLOYEE_WRITE),
+  requireBackdatePermission(),
   employeeController.create,
 )
 
 // A collection read has no "your own" narrowing available, so a self-scoped role
 // is refused outright rather than handed a silently truncated list.
+//
+// A MANAGER is not refused: their narrowing DOES exist — their org-chart
+// subtree — but it is a filter rather than a yes/no, so it cannot live in a
+// middleware. The controller resolves it and the service puts it in the query.
 employeeRouter.get(
   "/",
   rateLimit.read(),
@@ -39,10 +46,15 @@ employeeRouter.get(
 )
 
 // Before "/:id", otherwise a literal path segment would be read as an id.
+//
+// The two scope checks compose: `requireSelfOrPermission` confines an EMPLOYEE
+// to their own record, `requireSubtreeScope` confines a MANAGER to their
+// reporting line, and an admin passes both untouched.
 employeeRouter.get(
   "/:id/attribute-history",
   rateLimit.read(),
   requireSelfOrPermission("id", PERMISSIONS.EMPLOYEE_READ),
+  requireSubtreeScope("id"),
   employeeController.getAttributeHistory,
 )
 
@@ -52,24 +64,35 @@ employeeRouter.get(
   "/:id/assignments",
   rateLimit.read(),
   requireSelfOrPermission("id", PERMISSIONS.ASSIGNMENT_READ),
+  requireSubtreeScope("id"),
   assignmentController.listForEmployee,
 )
 
 // A hypothetical change run through the engine. Writes nothing, but evaluates
 // every rule in the organization, so it is billed against the EXPENSIVE tier.
+//
+// DECISION: subtree-scoped as well. It is a single-employee read in everything
+// but HTTP verb — it answers "what would this person get?" — so leaving it
+// org-wide would hand a MANAGER the policy state of anyone in the company
+// through the one endpoint that was not on the list.
 employeeRouter.post(
   "/:id/preview",
   rateLimit.expensive(),
   requirePermission(PERMISSIONS.EMPLOYEE_READ, PERMISSIONS.ASSIGNMENT_READ),
   denySelfScopedRole(),
+  requireSubtreeScope("id"),
   assignmentController.preview,
 )
 
 // Manual overrides targeting this employee. Revoking one is DELETE /overrides/:id.
+//
+// DECISION: subtree-scoped, for the same reason as /preview — it reads one named
+// employee's policy state, so a MANAGER sees it only for their own line.
 employeeRouter.get(
   "/:id/overrides",
   rateLimit.read(),
   requirePermission(PERMISSIONS.RULE_READ),
+  requireSubtreeScope("id"),
   ruleController.listOverrides,
 )
 
@@ -84,6 +107,7 @@ employeeRouter.get(
   "/:id/audit",
   rateLimit.read(),
   requirePermission(PERMISSIONS.AUDIT_READ),
+  requireSubtreeScope("id"),
   auditController.listForEmployee,
 )
 
@@ -91,6 +115,7 @@ employeeRouter.get(
   "/:id",
   rateLimit.read(),
   requireSelfOrPermission("id", PERMISSIONS.EMPLOYEE_READ),
+  requireSubtreeScope("id"),
   employeeController.getById,
 )
 
@@ -98,6 +123,7 @@ employeeRouter.put(
   "/:id",
   rateLimit.write(),
   requirePermission(PERMISSIONS.EMPLOYEE_WRITE),
+  requireBackdatePermission(),
   employeeController.replace,
 )
 
@@ -105,6 +131,7 @@ employeeRouter.patch(
   "/:id",
   rateLimit.write(),
   requirePermission(PERMISSIONS.EMPLOYEE_WRITE),
+  requireBackdatePermission(),
   employeeController.patch,
 )
 

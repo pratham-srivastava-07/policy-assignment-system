@@ -2,7 +2,7 @@ import { Router } from "express"
 import { PERMISSIONS } from "@policy/shared"
 import { ruleController } from "../controllers"
 import { requireAuth } from "../middlewares/auth"
-import { requirePermission } from "../middlewares/permission"
+import { requireBackdatePermission, requirePermission } from "../middlewares/permission"
 import { rateLimit } from "../middlewares/rate-limit"
 
 export const ruleRouter = Router()
@@ -22,10 +22,14 @@ ruleRouter.post(
   ruleController.simulate,
 )
 
+// A rule's effective window decides which days it was in force, so opening one
+// in the past re-decides who held which policy on those days. Same gate as an
+// employee attribute correction.
 ruleRouter.post(
   "/",
   rateLimit.write(),
   requirePermission(PERMISSIONS.RULE_WRITE),
+  requireBackdatePermission(),
   ruleController.create,
 )
 
@@ -84,6 +88,7 @@ ruleRouter.patch(
   "/:id",
   rateLimit.write(),
   requirePermission(PERMISSIONS.RULE_WRITE),
+  requireBackdatePermission(),
   ruleController.patch,
 )
 

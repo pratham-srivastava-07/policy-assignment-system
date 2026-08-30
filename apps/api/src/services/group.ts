@@ -148,11 +148,61 @@ export class GroupService implements GroupServiceInterface {
     })
   }
 
-  async delete(organizationId: string, actorId: string, id: string): Promise<GroupDTO> {
+  /**
+   * Deletion — what `DELETE /groups/:id` does.
+   *
+   * A soft delete, for the same reason terminating an employee is one. Removing
+   * the row cascaded `employee_groups` away with it, and that destroyed both
+   * halves of what the deletion owed:
+   *
+   *   * the affected population. The outbox row could only name the group, and
+   *     by the time the relay read it there were no memberships left to
+   *     enumerate — so the row was rejected and every former member kept an
+   *     assignment no reconciliation would ever remove.
+   *
+   *   * the history. An assignment explained by "member of group X" cannot be
+   *     explained once X and the membership rows are gone.
+   *
+   * So the row stays with `deletedOn` stamped on it, and every open membership
+   * is END-DATED on that same day rather than deleted. From that day on nobody
+   * is in the group, which is what makes the reconciliation this enqueues remove
+   * the policies the group conferred — while every past date still answers
+   * correctly.
+   *
+   * DECISION: the outbox payload names the group and the date, NOT the members.
+   * The membership rows survive now, so the relay can query them; writing the
+   * roster into JSONB instead would be an unbounded payload for a large group,
+   * and a stale one the moment anything else moved.
+   */
+  async delete(
+    organizationId: string,
+    actorId: string,
+    id: string,
+    deletedOnInput?: string,
+  ): Promise<GroupDTO> {
 
+    // DECISION: a soft-deleted group is NOT FOUND, not "found but deleted".
+    // `requireGroup` reads through the live-only repository, so re-deleting,
+    // renaming, reading or adding a member to a deleted group all fail
+    // identically with 404 — the same answer `GET /groups` gives by omitting it.
+    // That is also what stops a second delete from enqueuing a second outbox
+    // row: this throws before the transaction opens.
     const group = await this.requireGroup(organizationId, id)
 
-    await this.transactions.run(async (tx) => {
+    const deletedOn = fromIsoDate(deletedOnInput ?? todayIsoDate())
+
+    const after = await this.transactions.run(async (tx) => {
+
+      const deleted = await this.groups.softDelete(organizationId, id, deletedOn, tx)
+
+      if (deleted === 0) {
+
+        throw new AppError("Group not found", 404, ERROR_CODES.NOT_FOUND)
+      }
+
+      // `effectiveTo` is exclusive, so the last day these memberships held is
+      // the day before the deletion date.
+      const memberships = await this.members.endAllOpenForGroup(id, deletedOn, tx)
 
       await this.audit.record(
         organizationId,
@@ -162,12 +212,21 @@ export class GroupService implements GroupServiceInterface {
           entityType: AUDIT_ENTITY_TYPES.GROUP,
           entityId: group.id,
           beforeState: { name: group.name, description: group.description },
+          afterState: {
+            name: group.name,
+            description: group.description,
+            deletedOn: toIsoDate(deletedOn),
+          },
+          metadata: {
+            deletedOn: toIsoDate(deletedOn),
+            endedGroupMemberships: memberships,
+          },
         },
         tx,
       )
 
-      // Deleting a group cascades its memberships away, so every employee who
-      // was in it may now resolve differently.
+      // Everyone who was in the group may now resolve differently. The relay
+      // derives exactly who from the membership rows this just end-dated.
       await this.outbox.enqueue(
         organizationId,
         {
@@ -176,20 +235,19 @@ export class GroupService implements GroupServiceInterface {
           aggregateId: group.id,
           payload: {
             groupId: group.id,
+            deletedOn: toIsoDate(deletedOn),
           },
         },
         tx,
       )
 
-      const deleted = await this.groups.delete(organizationId, id, tx)
-
-      if (deleted === 0) {
-
-        throw new AppError("Group not found", 404, ERROR_CODES.NOT_FOUND)
+      return {
+        ...group,
+        deletedOn,
       }
     })
 
-    return toGroupDTO(group)
+    return toGroupDTO(after)
   }
 
   /** Point-in-time roster, defaulting to today. */

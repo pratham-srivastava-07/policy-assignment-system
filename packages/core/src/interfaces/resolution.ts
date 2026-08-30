@@ -5,6 +5,7 @@ import {
   PreviewDTO,
   ReconciliationResultDTO,
 } from "@policy/shared"
+import { SubtreeReadScope } from "./employee"
 
 /**
  * The resolution vocabulary, stated without Zod and without Express.
@@ -80,10 +81,17 @@ export interface ResolutionServiceInterface {
     query: EmployeeAssignmentsQuery,
   ): Promise<Page<AssignmentDTO>>
 
-  /** The batch read — one query for many employees, not one query each. */
+  /**
+   * The batch read — one query for many employees, not one query each.
+   *
+   * `scope`, when present, intersects the requested ids with one org-chart
+   * subtree. That is how a MANAGER's batch read is confined to their own
+   * reporting line.
+   */
   listForEmployees(
     organizationId: string,
     query: ListAssignmentsQuery,
+    scope?: SubtreeReadScope | null,
   ): Promise<Page<AssignmentDTO>>
 
   /** "Why does this assignment exist?" — winner, rule text, and every loser. */

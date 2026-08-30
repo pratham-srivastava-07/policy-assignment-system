@@ -23,11 +23,14 @@
 //     security boundary: the value is always derived from the authenticated
 //     session, never from client input.
 //
-// Two constraints in this schema cannot be expressed in Prisma schema language
+// Three constraints in this schema cannot be expressed in Prisma schema language
 // and are appended by hand to the generated migration SQL:
 //
 //   1. policy_rules: CHECK (employee_id IS NOT NULL) = (rule_type = 'MANUAL')
 //   2. assignments:  partial UNIQUE index enforcing SINGLE cardinality
+//   3. groups:       partial UNIQUE index on (organization_id, name) over LIVE
+//                    groups only, so a soft-deleted group stops reserving its
+//                    name
 //
 // See packages/db/prisma/migrations/*/migration.sql.
 // ============================================================================
@@ -242,8 +245,23 @@ model Employee {
   state      String?
   country    String?
 
-  /// Backs the `isManager` condition attribute. Stored rather than derived
-  /// because this schema models no org chart (see report — open question).
+  /// Who this employee reports to. The org chart is a single self-referencing
+  /// edge: one manager per employee, any number of reports per manager.
+  ///
+  /// SetNull rather than Cascade — a manager leaving must not delete their
+  /// reports. Their reports simply become unparented until reassigned.
+  managerId String? @map("manager_id") @db.Uuid
+
+  /// Backs the `isManager` condition attribute.
+  ///
+  /// DERIVED, not authored: true exactly when at least one employee reports to
+  /// this one. It is maintained by EmployeeService whenever a `managerId`
+  /// changes, and is stored rather than computed on read because rule
+  /// evaluation asks for it across a whole population at once — a correlated
+  /// count per employee would turn every rule sweep into an N+1.
+  ///
+  /// `manager_id` is the source of truth. If the two ever disagree, this column
+  /// is wrong.
   isManager Boolean @default(false) @map("is_manager")
 
   /// Employment lifecycle. Replaces hard deletion: `DELETE /employees/:id` is a
@@ -258,6 +276,8 @@ model Employee {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization     Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  manager          Employee?                   @relation("EmployeeReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports          Employee[]                  @relation("EmployeeReports")
   user             User?
   groupMemberships EmployeeGroup[]
   assignments      Assignment[]
@@ -283,6 +303,9 @@ model Employee {
   // /rules/:id/matching-employees and /rules/simulate run over, and the filter
   // that keeps terminated employees out of resolution.
   @@index([organizationId, status])
+  // "who reports to this manager" — the subtree walk behind manager-scoped
+  // reads, and the lookup that recomputes `is_manager` after a reassignment.
+  @@index([organizationId, managerId])
   @@map("employees")
 }
 
@@ -293,15 +316,37 @@ model Group {
   organizationId String   @map("organization_id") @db.Uuid
   name           String
   description    String?
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// Soft deletion, mirroring `Employee.terminatedOn`.
+  ///
+  /// `DELETE /groups/:id` no longer removes the row. Hard deletion cascaded
+  /// `employee_groups` away with it, which destroyed both halves of what the
+  /// deletion needed: the affected population (nobody left to reconcile) and
+  /// the effective-dated membership history that explainability reads — an
+  /// assignment explained by "member of group X" is unexplainable once X is
+  /// gone.
+  ///
+  /// So the row stays, this records the calendar day it stopped existing, and
+  /// every open membership is end-dated on the same day. A DATE, not a
+  /// timestamp, because membership end-dating is calendar-day arithmetic and
+  /// the two must agree.
+  deletedOn DateTime? @map("deleted_on") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   members      EmployeeGroup[]
 
-  // Group names are unique per org; the leading column also serves
-  // "list this org's groups".
-  @@unique([organizationId, name])
+  // Group names are unique per org among LIVE groups only. A plain
+  // `@@unique([organizationId, name])` would reserve a deleted group's name
+  // forever, so the constraint is a PARTIAL unique index
+  // (`WHERE deleted_on IS NULL`) appended by hand to the migration — Prisma's
+  // schema language cannot express the predicate. See
+  // migrations/20260830120000_group_soft_delete/migration.sql.
+  //
+  // "the live groups in this org" — the list endpoint and every group read.
+  @@index([organizationId, deletedOn])
   @@map("groups")
 }
 

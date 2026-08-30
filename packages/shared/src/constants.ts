@@ -128,6 +128,11 @@ export type OutboxAggregateType =
  *
  * `groupId` is absent because group membership has its own effective-dated
  * table, and `tenureDays` is absent because it is never stored.
+ *
+ * `managerId` is tracked even though no rule matches on it directly: it is what
+ * `isManager` is derived from, so "why did this employee stop being a manager on
+ * 3 March?" is only answerable if the reporting change that caused it is in the
+ * history alongside the flag it moved.
  */
 export const TRACKED_EMPLOYEE_ATTRIBUTES = [
   "department",
@@ -136,6 +141,7 @@ export const TRACKED_EMPLOYEE_ATTRIBUTES = [
   "location",
   "employmentType",
   "role",
+  "managerId",
   "isManager",
   "hireDate",
 ] as const

@@ -119,6 +119,12 @@ export interface EmployeeDTO {
   location: string | null
   state: string | null
   country: string | null
+  /** Who this employee reports to. The org chart, one edge at a time. */
+  managerId: string | null
+  /**
+   * Derived from `managerId`, never authored: true exactly when at least one
+   * ACTIVE employee reports to this one.
+   */
   isManager: boolean
   status: EmployeeStatus
   /** The day employment ended. Set only when `status` is TERMINATED. */
@@ -150,6 +156,13 @@ export interface GroupDTO {
   organizationId: string
   name: string
   description: string | null
+  /**
+   * The day the group was deleted. Null on every group a read endpoint returns —
+   * deleted groups are filtered out — so this is only ever set on the body
+   * `DELETE /groups/:id` hands back, which is where the caller needs to see the
+   * date the memberships were end-dated on.
+   */
+  deletedOn: IsoDate | null
   createdAt: IsoDateTime
   updatedAt: IsoDateTime
 }

@@ -39,6 +39,7 @@ import {
   ReconcileEmployeeInput,
   ResolutionServiceInterface,
 } from "../interfaces/resolution"
+import { SubtreeReadScope } from "../interfaces/employee"
 import { AppError } from "../utils/AppError"
 import {
   toAssignmentDTO,
@@ -108,19 +109,34 @@ export class ResolutionService implements ResolutionServiceInterface {
     return this.page(rows.map(toAssignmentDTO), query)
   }
 
+  /**
+   * The batch read.
+   *
+   * `scope` narrows it to one org-chart subtree — how a MANAGER's collection
+   * read is confined. The requested ids are INTERSECTED with the subtree rather
+   * than replaced by it: the caller still chooses who they are asking about,
+   * they just cannot ask about anyone outside their own reporting line. Asking
+   * for an employee outside it yields nothing for that employee rather than a
+   * 403, which matches how an id from another tenant already behaves here.
+   */
   async listForEmployees(
     organizationId: string,
     query: ListAssignmentsQuery,
+    scope: SubtreeReadScope | null = null,
   ): Promise<Page<AssignmentDTO>> {
 
     const asOf = fromIsoDate(query.asOf ?? todayIsoDate())
+
+    const employeeIds = scope
+      ? await this.narrowToSubtree(organizationId, query.employeeIds, scope)
+      : query.employeeIds
 
     // One query for the whole batch. The employee ids are filtered by the
     // organization inside the repository, so an id from another tenant simply
     // contributes nothing rather than leaking a row.
     const rows = await this.assignments.findForEmployeesAsOf(
       organizationId,
-      query.employeeIds,
+      employeeIds,
       asOf,
     )
 
@@ -594,6 +610,25 @@ export class ResolutionService implements ResolutionServiceInterface {
   private policyKey(winner: ResolvedPolicy): string {
 
     return `${winner.categoryId}|${winner.policyId}`
+  }
+
+  /**
+   * The requested ids, minus everyone outside the caller's org-chart subtree.
+   *
+   * The subtree is expanded once and used as a set, so the cost is one recursive
+   * walk regardless of how many ids were asked for.
+   */
+  private async narrowToSubtree(
+    organizationId: string,
+    requested: readonly string[],
+    scope: SubtreeReadScope,
+  ): Promise<string[]> {
+
+    const visible = new Set(
+      await this.employees.findSubtreeIds(organizationId, scope.rootEmployeeId),
+    )
+
+    return requested.filter((employeeId) => visible.has(employeeId))
   }
 
   private page<T>(items: T[], query: { limit: number; offset: number }): Page<T> {

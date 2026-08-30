@@ -73,6 +73,7 @@ export const toEmployeeDTO = (employee: Employee, asOf: Date = new Date()): Empl
   location: employee.location,
   state: employee.state,
   country: employee.country,
+  managerId: employee.managerId,
   isManager: employee.isManager,
   status: employee.status,
   terminatedOn: employee.terminatedOn ? toIsoDate(employee.terminatedOn) : null,
@@ -86,6 +87,7 @@ export const toGroupDTO = (group: Group): GroupDTO => ({
   organizationId: group.organizationId,
   name: group.name,
   description: group.description,
+  deletedOn: group.deletedOn ? toIsoDate(group.deletedOn) : null,
   createdAt: group.createdAt.toISOString(),
   updatedAt: group.updatedAt.toISOString(),
 })

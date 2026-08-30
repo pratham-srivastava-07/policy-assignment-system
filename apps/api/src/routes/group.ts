@@ -2,7 +2,7 @@ import { Router } from "express"
 import { PERMISSIONS } from "@policy/shared"
 import { groupController } from "../controllers"
 import { requireAuth } from "../middlewares/auth"
-import { requirePermission } from "../middlewares/permission"
+import { requireBackdatePermission, requirePermission } from "../middlewares/permission"
 import { rateLimit } from "../middlewares/rate-limit"
 
 export const groupRouter = Router()
@@ -33,10 +33,15 @@ groupRouter.get(
   groupController.listMembers,
 )
 
+// Joining and leaving are effective-dated, so both carry the back-dating gate:
+// a membership that starts or ends in the past rewrites which policies applied
+// then. `effectiveFrom` arrives in the body here, `effectiveTo` in the query
+// string on the DELETE below; the one middleware inspects both.
 groupRouter.post(
   "/:id/members",
   rateLimit.write(),
   requirePermission(PERMISSIONS.GROUP_WRITE),
+  requireBackdatePermission(),
   groupController.addMember,
 )
 
@@ -44,6 +49,7 @@ groupRouter.delete(
   "/:id/members/:employeeId",
   rateLimit.write(),
   requirePermission(PERMISSIONS.GROUP_WRITE),
+  requireBackdatePermission(),
   groupController.removeMember,
 )
 

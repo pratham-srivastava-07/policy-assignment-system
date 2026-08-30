@@ -32,6 +32,23 @@ export const ERROR_CODES = {
   INVALID_RULE_CONDITIONS: "INVALID_RULE_CONDITIONS",
   MANUAL_RULE_REQUIRES_EMPLOYEE: "MANUAL_RULE_REQUIRES_EMPLOYEE",
 
+  /**
+   * The proposed manager cannot hold that position: they do not exist in this
+   * organization, they are the employee themselves, or they have been
+   * terminated.
+   */
+  INVALID_MANAGER: "INVALID_MANAGER",
+  /**
+   * The proposed manager already reports — directly or through a chain — to the
+   * employee being reassigned. Accepting it would close a loop in the org chart.
+   */
+  MANAGER_CYCLE: "MANAGER_CYCLE",
+  /**
+   * An effective date earlier than today was supplied by a caller who does not
+   * hold `employee:backdate`.
+   */
+  BACKDATING_NOT_PERMITTED: "BACKDATING_NOT_PERMITTED",
+
   INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const
 

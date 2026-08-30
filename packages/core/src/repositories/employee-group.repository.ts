@@ -235,6 +235,81 @@ class EmployeeGroupRepository {
     return result.count
   }
 
+  /**
+   * End-date every open membership OF A GROUP. Group deletion uses this: the
+   * group stops existing on `effectiveTo`, so nobody is in it from that day on.
+   *
+   * The rows are closed, never removed. That is the whole point of soft-deleting
+   * the group: "who was in this group on 1 January" — and therefore why an
+   * assignment sourced from a GROUP rule was made — stays answerable after the
+   * group is gone.
+   */
+  async endAllOpenForGroup(
+    groupId: string,
+    effectiveTo: Date,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    const result = await this.db(tx).employeeGroup.updateMany({
+      where: {
+        groupId,
+        effectiveTo: null,
+      },
+      data: {
+        effectiveTo,
+      },
+    })
+
+    return result.count
+  }
+
+  /**
+   * The employees whose membership of a group was open immediately before
+   * `deletedOn` — the affected population of a group deletion.
+   *
+   * This is deliberately NOT the point-in-time predicate at `deletedOn`. By the
+   * time this is asked, `endAllOpenForGroup` has already closed every open row
+   * at exactly that date, and `effectiveTo` is exclusive, so the roster AS OF
+   * `deletedOn` is empty by construction. What is wanted is the roster the
+   * deletion just emptied:
+   *
+   *     effective_from <= deletedOn AND (effective_to IS NULL OR effective_to >= deletedOn)
+   *
+   * `>=` rather than `>` is what includes the rows the deletion itself closed.
+   * It also picks up a membership that was already scheduled to end on that same
+   * day, which is harmless: reconciliation is a diff, so an employee who needed
+   * nothing done has nothing written.
+   *
+   * `effective_from <= deletedOn` keeps out a membership that was only ever
+   * scheduled to START after the group was deleted — it never took effect, so it
+   * never produced an assignment to remove.
+   */
+  async findMemberIdsOpenBeforeDeletion(
+    groupId: string,
+    deletedOn: Date,
+    tx?: TxClient,
+  ): Promise<string[]> {
+
+    const rows = await this.db(tx).employeeGroup.findMany({
+      where: {
+        groupId,
+        effectiveFrom: {
+          lte: deletedOn,
+        },
+        OR: [
+          { effectiveTo: null },
+          { effectiveTo: { gte: deletedOn } },
+        ],
+      },
+      select: {
+        employeeId: true,
+      },
+      distinct: ["employeeId"],
+    })
+
+    return rows.map((row) => row.employeeId)
+  }
+
   /** Removal: close the row rather than delete it. */
   async endMembership(id: string, effectiveTo: Date, tx?: TxClient): Promise<EmployeeGroup> {
 

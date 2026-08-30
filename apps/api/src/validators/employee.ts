@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { EMPLOYEE_STATUSES } from "@policy/shared"
-import { email, isoDate, paginationQuery, shortText } from "./common"
+import { email, isoDate, paginationQuery, shortText, uuid } from "./common"
 
 const optionalText = z.string().trim().min(1).max(100)
 
@@ -18,6 +18,22 @@ const employeeFields = {
   location: optionalText.nullable().optional(),
   state: optionalText.nullable().optional(),
   country: optionalText.nullable().optional(),
+  /**
+   * Who this employee reports to. Nullable — `null` clears the edge and makes
+   * them unparented; omitted on PUT means the same thing, since PUT clears what
+   * it does not mention.
+   *
+   * The service validates the rest: same organization, not the employee
+   * themselves, not terminated, and not already somewhere below the employee in
+   * the chart.
+   */
+  managerId: uuid.nullable().optional(),
+  // DECISION: `isManager` stays accepted so that an existing client sending it
+  // does not start failing a `.strict()` schema, but it is IGNORED. The column
+  // is derived from `managerId` (see the schema comment on
+  // `Employee.isManager`), and the service recomputes it from the actual direct
+  // reports on every write. Honouring an authored value here would let a caller
+  // put the flag out of step with the org chart it summarizes.
   isManager: z.boolean().optional(),
 }
 

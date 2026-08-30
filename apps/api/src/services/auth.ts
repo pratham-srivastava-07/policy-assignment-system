@@ -45,10 +45,40 @@ export class AuthService implements AuthServiceInterface {
    * Signup bootstraps a whole tenant in one transaction: organization, first
    * user, that user's COMPANY_ADMIN membership, and a session.
    *
-   * NOTE: that signup creates an organization is an assumption forced by the
-   * current surface — nothing else in the API can create one, so without it the
-   * system has no reachable state. If an invite-based flow is intended instead,
-   * this is the method to change.
+   * ---------------------------------------------------------------------------
+   * V2: INVITE / JOIN FLOW — DEFERRED, DELIBERATELY NOT BUILT
+   * ---------------------------------------------------------------------------
+   * Org-creating signup is the v1 BOOTSTRAP and nothing more. Nothing else in
+   * the API can create an organization, so without this the system has no
+   * reachable state at all — the first user has to be able to bring a tenant
+   * into existence. It is not the intended way a colleague joins an existing
+   * company, and it should not be treated as one: every signup today produces a
+   * brand-new organization whose only member is a COMPANY_ADMIN.
+   *
+   * Joining an EXISTING organization by invitation is v2. It is not stubbed,
+   * half-wired or feature-flagged anywhere in this codebase — there is no
+   * invitations table, no token, no endpoint. What it would take, when it is
+   * built:
+   *
+   *   * an `invitations` table: organization, invited email, the role being
+   *     offered, the inviting user, an expiry, a single-use acceptance
+   *     timestamp, and the HASH of the invite token (never the token itself,
+   *     for the same reason `sessions` stores only a hash);
+   *   * a token handed to the invitee out of band, which is the only thing that
+   *     proves they were invited — acceptance must not take an organization id
+   *     from the request body, or anyone could join any tenant by guessing;
+   *   * issuing an invite gated on `member:write`, which COMPANY_ADMIN holds and
+   *     HR_ADMIN deliberately does not — deciding who gets access to the tenant
+   *     is exactly the line those two roles are split on. The role being offered
+   *     must be capped at the inviter's own;
+   *   * acceptance becoming the second entry point to this file: it creates the
+   *     user (or attaches an existing one), creates the membership at the
+   *     invited role, burns the invitation, and issues a session — while
+   *     creating NO organization;
+   *   * signup itself then narrowing to first-run bootstrap, or disappearing
+   *     behind the invite flow entirely.
+   *
+   * Until then the assumption above stands, stated rather than hidden.
    */
   async signup(data: SignupInput): Promise<AuthSessionDTO> {
 

@@ -1,5 +1,6 @@
 import { NextFunction, Response } from "express"
 import { EmployeeAttributeHistoryDTO, EmployeeDTO, Page } from "@policy/shared"
+import { SubtreeReadScope } from "@policy/core"
 import {
   CreateEmployeeInput,
   ListEmployeesQuery,
@@ -21,6 +22,7 @@ export type {
   EmployeeListOptions,
   EmployeeRecord,
   EmployeeRow,
+  SubtreeReadScope,
   UpdateEmployeeRecord,
 } from "@policy/core"
 
@@ -31,7 +33,15 @@ export interface EmployeeServiceInterface {
     data: CreateEmployeeInput,
   ): Promise<EmployeeDTO>
 
-  list(organizationId: string, query: ListEmployeesQuery): Promise<Page<EmployeeDTO>>
+  /**
+   * `scope`, when present, confines the result to one org-chart subtree — how a
+   * MANAGER's collection read is narrowed. Absent means unscoped.
+   */
+  list(
+    organizationId: string,
+    query: ListEmployeesQuery,
+    scope?: SubtreeReadScope | null,
+  ): Promise<Page<EmployeeDTO>>
 
   getById(organizationId: string, id: string): Promise<EmployeeDTO>
 

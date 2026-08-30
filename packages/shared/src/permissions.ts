@@ -22,6 +22,21 @@ import { OrganizationRole } from "./enums"
 export const PERMISSIONS = {
   EMPLOYEE_READ: "employee:read",
   EMPLOYEE_WRITE: "employee:write",
+  /**
+   * Supplying an effective date earlier than today on any write.
+   *
+   * Back-dating is not a bigger version of writing — it rewrites what the system
+   * believes was true in the past, and every assignment resolved against that
+   * past moves with it. So it is a permission of its own rather than a corner of
+   * `employee:write`, and it is held by the upper-management roles only.
+   *
+   * Despite the `employee:` prefix it governs every effective-dated write:
+   * employee attributes, group membership and rule windows. The prefix names
+   * where back-dating is felt — an employee's history — not the one table it
+   * applies to. Splitting it three ways would let a caller rewrite one half of
+   * an employee's past and not the other, which is worse than one honest gate.
+   */
+  EMPLOYEE_BACKDATE: "employee:backdate",
 
   GROUP_READ: "group:read",
   GROUP_WRITE: "group:write",
@@ -65,17 +80,21 @@ export const READ_ONLY_PERMISSIONS: readonly Permission[] = ALL_PERMISSIONS.filt
  *
  * HR_ADMIN
  *   Runs people operations day to day: employees, groups, policies, rules and
- *   overrides. Deliberately cannot reshape the organization or change who has
- *   access to it — that separation is the point of having two admin roles.
+ *   overrides, back-dated ones included. Deliberately cannot reshape the
+ *   organization or change who has access to it — that separation is the point
+ *   of having two admin roles.
  *
  * MANAGER
- *   Reads, never writes.
+ *   Reads, never writes, and reads only their own org-chart subtree: themselves
+ *   and everyone beneath them, however deep. `employees.manager_id` is what
+ *   makes that boundary definable — before the org chart existed this role read
+ *   org-wide for want of anything to narrow it to.
  *
- *   DECISION: `docs/architecture.md` describes a manager seeing "relevant
- *   employees" — their reports. The schema has no `manager_id` and no org chart,
- *   so "relevant" has no definition to enforce. Rather than invent a reporting
- *   structure, MANAGER currently reads org-wide. Narrowing this to a subtree is
- *   blocked on an org chart being modelled first.
+ *   Like EMPLOYEE's self-scoping, the narrowing is not expressible as a
+ *   permission string: a permission answers "may you read employees?", not
+ *   "which ones?". It is enforced by the subtree check in the permission
+ *   middleware for single-record reads, and pushed into the query as a filter
+ *   for collection reads.
  *
  * EMPLOYEE
  *   Sees their own record and their own policy state, and nothing else. The
@@ -104,6 +123,19 @@ export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly Permission[]> =
  */
 export const SELF_SCOPED_ROLES: readonly OrganizationRole[] = ["EMPLOYEE"]
 
+/**
+ * Roles whose reads are confined to their own org-chart subtree.
+ *
+ * The subtree root is the caller's own employee record, so a role listed here
+ * that has no linked employee record has no scope at all and is refused rather
+ * than handed the organization.
+ *
+ * Deliberately disjoint from `SELF_SCOPED_ROLES`: a self-scoped role is already
+ * narrower than any subtree, and running both narrowings over one request would
+ * be two answers to the same question.
+ */
+export const SUBTREE_SCOPED_ROLES: readonly OrganizationRole[] = ["MANAGER"]
+
 /** Whether `role` carries `permission`. */
 export const roleHasPermission = (
   role: OrganizationRole,
@@ -131,4 +163,10 @@ export const roleHasAllPermissions = (
 export const isSelfScopedRole = (role: OrganizationRole): boolean => {
 
   return SELF_SCOPED_ROLES.includes(role)
+}
+
+/** Whether `role` may only ever read inside its own org-chart subtree. */
+export const isSubtreeScopedRole = (role: OrganizationRole): boolean => {
+
+  return SUBTREE_SCOPED_ROLES.includes(role)
 }

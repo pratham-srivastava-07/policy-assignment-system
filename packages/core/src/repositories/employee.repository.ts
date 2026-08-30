@@ -8,6 +8,22 @@ import {
 import { CandidateFilter } from "../engine/candidates"
 
 /**
+ * How far the recursive subtree walk is allowed to descend.
+ *
+ * This is a safety belt, not a business rule. A well-formed org chart is a tree
+ * and never comes close to it; the cap exists so that a cycle that somehow got
+ * past the service check (a direct UPDATE against the database, say) costs a
+ * bounded query instead of hanging the connection. The visited-set in the CTE
+ * already breaks such a cycle — the cap is the second, cheaper guarantee.
+ */
+const MAX_ORG_CHART_DEPTH = 64
+
+/** A single-column result row from the subtree CTE. */
+interface SubtreeIdRow {
+  id: string
+}
+
+/**
  * Employees.
  *
  * Every method takes `organizationId` first and constrains on it — including the
@@ -42,6 +58,11 @@ class EmployeeRepository {
     if (options.role !== undefined) where.role = options.role
     if (options.isManager !== undefined) where.isManager = options.isManager
     if (options.status !== undefined) where.status = options.status
+
+    // The subtree narrowing a MANAGER's collection read is confined to. It is an
+    // additional AND, never a replacement for the tenant predicate, and an empty
+    // list is honoured as "no rows" rather than quietly ignored.
+    if (options.employeeIds !== undefined) where.id = { in: options.employeeIds }
 
     if (options.search) {
 
@@ -237,6 +258,194 @@ class EmployeeRepository {
         name: "asc",
       },
     })
+  }
+
+  // -------------------------------------------------------------------------
+  // Org chart
+  //
+  // The reporting structure is `employees.manager_id`, a single self-referencing
+  // edge. Everything below reads it; nothing below writes it except
+  // `setIsManager`, which maintains the derived flag rather than the edge.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The employees who report directly to this one.
+   *
+   * ACTIVE only. A terminated report is not somebody you manage, and counting
+   * one would keep `is_manager` true for a manager whose whole team has left.
+   */
+  async findDirectReports(
+    organizationId: string,
+    managerId: string,
+    tx?: TxClient,
+  ): Promise<Employee[]> {
+
+    return this.db(tx).employee.findMany({
+      where: {
+        organizationId,
+        managerId,
+        status: "ACTIVE",
+      },
+      orderBy: {
+        name: "asc",
+      },
+    })
+  }
+
+  /**
+   * How many ACTIVE employees report directly to this one.
+   *
+   * This is the authority behind `is_manager`: the flag is exactly
+   * `countDirectReports(...) > 0`, recomputed by the service inside the same
+   * transaction as the `manager_id` change that could have moved it.
+   */
+  async countDirectReports(
+    organizationId: string,
+    managerId: string,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    return this.db(tx).employee.count({
+      where: {
+        organizationId,
+        managerId,
+        status: "ACTIVE",
+      },
+    })
+  }
+
+  /**
+   * The root employee plus every employee beneath them in the org chart.
+   *
+   * A reporting chain is unbounded in depth, so this is a recursive CTE rather
+   * than a fixed number of joins. Two properties matter:
+   *
+   *   * It is CYCLE-SAFE. `path` accumulates every id already visited on this
+   *     branch and the recursive term refuses to re-enter one
+   *     (`NOT (c.id = ANY(s.path))`), so a cycle terminates the branch instead
+   *     of looping. `depth < MAX_ORG_CHART_DEPTH` is a second, independent stop.
+   *     Neither is load-bearing for a well-formed chart — they exist so that a
+   *     malformed one cannot hang the query, which is the failure mode that
+   *     takes a connection pool with it.
+   *
+   *   * It is TENANT-SAFE. `organization_id` is constrained inside BOTH the
+   *     anchor and the recursive term, not only at the root. Constraining only
+   *     the root would let the walk cross into another tenant's rows the moment
+   *     one bad `manager_id` pointed there.
+   *
+   * The root is included in the result: a manager's own record is inside their
+   * own scope.
+   */
+  async findSubtreeIds(
+    organizationId: string,
+    rootEmployeeId: string,
+    tx?: TxClient,
+  ): Promise<string[]> {
+
+    const rows = await this.db(tx).$queryRaw<SubtreeIdRow[]>`
+      WITH RECURSIVE subtree AS (
+        SELECT
+          root.id,
+          ARRAY[root.id] AS path,
+          1 AS depth
+        FROM employees root
+        WHERE root.organization_id = ${organizationId}::uuid
+          AND root.id = ${rootEmployeeId}::uuid
+
+        UNION ALL
+
+        SELECT
+          child.id,
+          parent.path || child.id,
+          parent.depth + 1
+        FROM employees child
+        JOIN subtree parent ON child.manager_id = parent.id
+        WHERE child.organization_id = ${organizationId}::uuid
+          AND parent.depth < ${MAX_ORG_CHART_DEPTH}
+          AND NOT (child.id = ANY(parent.path))
+      )
+      SELECT DISTINCT id FROM subtree
+    `
+
+    return rows.map((row) => row.id)
+  }
+
+  /**
+   * Whether `candidateId` sits anywhere in `rootEmployeeId`'s subtree.
+   *
+   * The same walk as `findSubtreeIds`, with the same cycle and tenant guards,
+   * but it stops at the first hit and never materializes the id list. This is
+   * the check that makes a reporting cycle impossible: "may X report to Y?"
+   * is "is Y already below X?".
+   *
+   * The root answers for itself without touching the database — an employee is
+   * trivially inside their own subtree.
+   */
+  async isInSubtree(
+    organizationId: string,
+    rootEmployeeId: string,
+    candidateId: string,
+    tx?: TxClient,
+  ): Promise<boolean> {
+
+    if (rootEmployeeId === candidateId) {
+
+      return true
+    }
+
+    const rows = await this.db(tx).$queryRaw<SubtreeIdRow[]>`
+      WITH RECURSIVE subtree AS (
+        SELECT
+          root.id,
+          ARRAY[root.id] AS path,
+          1 AS depth
+        FROM employees root
+        WHERE root.organization_id = ${organizationId}::uuid
+          AND root.id = ${rootEmployeeId}::uuid
+
+        UNION ALL
+
+        SELECT
+          child.id,
+          parent.path || child.id,
+          parent.depth + 1
+        FROM employees child
+        JOIN subtree parent ON child.manager_id = parent.id
+        WHERE child.organization_id = ${organizationId}::uuid
+          AND parent.depth < ${MAX_ORG_CHART_DEPTH}
+          AND NOT (child.id = ANY(parent.path))
+      )
+      SELECT id FROM subtree WHERE id = ${candidateId}::uuid LIMIT 1
+    `
+
+    return rows.length > 0
+  }
+
+  /**
+   * Sets the derived `is_manager` flag.
+   *
+   * Separate from `update` on purpose: this is not an authored attribute, and
+   * the only correct caller is the service recomputing it from
+   * `countDirectReports` in the same transaction as a `manager_id` change.
+   */
+  async setIsManager(
+    organizationId: string,
+    employeeId: string,
+    value: boolean,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    const result = await this.db(tx).employee.updateMany({
+      where: {
+        id: employeeId,
+        organizationId,
+      },
+      data: {
+        isManager: value,
+      },
+    })
+
+    return result.count
   }
 
   /**
