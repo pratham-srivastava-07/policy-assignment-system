@@ -58,6 +58,14 @@ employeeRouter.get(
   employeeController.getAttributeHistory,
 )
 
+employeeRouter.get(
+  "/:id/groups",
+  rateLimit.read(),
+  requireSelfOrPermission("id", PERMISSIONS.EMPLOYEE_READ),
+  requireSubtreeScope("id"),
+  employeeController.getGroups,
+)
+
 // Policy state for one employee, all of it point-in-time (?asOf=YYYY-MM-DD).
 // An EMPLOYEE may read this, but only for themselves.
 employeeRouter.get(

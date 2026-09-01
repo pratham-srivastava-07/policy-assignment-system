@@ -1,6 +1,7 @@
 import { NextFunction, Response } from "express"
-import { Page, PolicyCategoryDTO, PolicyDTO } from "@policy/shared"
+import { Page, PolicyAssignmentDTO, PolicyCategoryDTO, PolicyDTO } from "@policy/shared"
 import {
+  AsOfPaginationQuery,
   CreatePolicyCategoryInput,
   CreatePolicyInput,
   ListPoliciesQuery,
@@ -61,6 +62,12 @@ export interface PolicyServiceInterface {
   ): Promise<PolicyDTO>
 
   delete(organizationId: string, actorId: string, id: string): Promise<PolicyDTO>
+
+  listAssignments(
+    organizationId: string,
+    id: string,
+    query: AsOfPaginationQuery,
+  ): Promise<Page<PolicyAssignmentDTO>>
 }
 
 export interface IPolicyCategoryController {
@@ -78,4 +85,5 @@ export interface IPolicyController {
   replace(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   patch(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   delete(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
+  listAssignments(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
 }

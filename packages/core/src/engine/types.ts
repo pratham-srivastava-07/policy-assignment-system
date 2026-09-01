@@ -1,4 +1,5 @@
 import {
+  AttributeValues,
   Cardinality,
   ConditionClause,
   PolicyStatus,
@@ -78,6 +79,7 @@ export interface ConditionEvaluation {
   matchedClauses: ConditionClause[]
   /** The first clause that did not hold. Absent when `matched` is true. */
   failedClause?: ConditionClause
+  attributeValues: AttributeValues
 }
 
 /** One rule the engine considered, and what became of it. */
@@ -93,6 +95,7 @@ export interface RuleTrailEntry {
   reason: string
   matchedClauses: ConditionClause[]
   failedClause: ConditionClause | null
+  attributeValues: AttributeValues
 }
 
 /** A policy the engine says should apply. */

@@ -22,6 +22,7 @@ export interface AuditEventFilters {
   from?: Date
   /** Exclusive upper bound on `created_at`. */
   to?: Date
+  search?: string
 }
 
 /**
@@ -143,6 +144,14 @@ class AuditEventRepository {
         ...(filters.from !== undefined && { gte: filters.from }),
         ...(filters.to !== undefined && { lt: filters.to }),
       }
+    }
+
+    if (filters.search !== undefined) {
+
+      where.OR = [
+        { action: { contains: filters.search, mode: "insensitive" } },
+        { entityType: { contains: filters.search, mode: "insensitive" } },
+      ]
     }
 
     return where

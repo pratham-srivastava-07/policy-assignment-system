@@ -4,6 +4,7 @@ import {
   PrismaClass,
   ResolutionDecision,
 } from "@policy/db"
+import { AttributeValues, ConditionClause } from "@policy/shared"
 import { TxClient } from "../interfaces/db"
 
 /** A decision row joined to the rule text that produced it. */
@@ -23,6 +24,9 @@ export interface CreateResolutionEventRecord {
   categoryId: string
   decision: ResolutionDecision
   reason: string
+  matchedClauses: ConditionClause[]
+  failedClause: ConditionClause | null
+  attributeValues: AttributeValues
   evaluatedAt: Date
 }
 
@@ -59,6 +63,11 @@ class AssignmentResolutionEventRepository {
     const data: Prisma.AssignmentResolutionEventCreateManyInput[] = rows.map((row) => ({
       ...row,
       organizationId,
+      matchedClauses: row.matchedClauses as unknown as Prisma.InputJsonValue,
+      failedClause: row.failedClause
+        ? (row.failedClause as unknown as Prisma.InputJsonValue)
+        : Prisma.DbNull,
+      attributeValues: row.attributeValues as Prisma.InputJsonValue,
     }))
 
     const result = await this.db(tx).assignmentResolutionEvent.createMany({

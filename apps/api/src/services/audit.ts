@@ -36,6 +36,7 @@ export class AuditService implements AuditServiceInterface {
       actorId: query.actorId,
       from: query.from ? fromIsoDate(query.from) : undefined,
       to: query.to ? fromIsoDate(query.to) : undefined,
+      search: query.search,
     }
 
     const [rows, total] = await Promise.all([

@@ -27,6 +27,7 @@ import { AuthService } from "./auth"
 import { EmployeeService } from "./employee"
 import { GroupService } from "./group"
 import { PolicyCategoryService, PolicyService } from "./policy"
+import { ReconciliationService } from "./reconciliation"
 import { ResolutionService } from "@policy/core"
 import { RuleService } from "./rule"
 import { UserService } from "./user"
@@ -78,6 +79,7 @@ export const policyService = new PolicyService(
   policyRepository,
   policyCategoryRepository,
   auditEventRepository,
+  assignmentRepository,
 )
 
 export const ruleService = new RuleService(
@@ -112,9 +114,11 @@ export const accessService = new AccessService(
 )
 
 export const auditService = new AuditService(auditEventRepository, employeeRepository)
+export const reconciliationService = new ReconciliationService(outboxEventRepository)
 
 export { AccessService } from "./access"
 export { AuditService } from "./audit"
+export { ReconciliationService } from "./reconciliation"
 export { AuthService } from "./auth"
 export { EmployeeService } from "./employee"
 export { GroupService } from "./group"

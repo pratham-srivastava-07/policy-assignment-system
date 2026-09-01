@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { PERMISSIONS } from "@policy/shared"
-import { assignmentController } from "../controllers"
+import { assignmentController, reconciliationController } from "../controllers"
 import { requireAuth } from "../middlewares/auth"
 import { requirePermission } from "../middlewares/permission"
 import { rateLimit } from "../middlewares/rate-limit"
@@ -22,4 +22,21 @@ reconciliationRouter.post(
   rateLimit.expensive(),
   requirePermission(PERMISSIONS.ASSIGNMENT_RECONCILE),
   assignmentController.reconcile,
+)
+
+// Read-only view of the outbox: how much reconciliation is pending, and which
+// rows have failed for good. Gated on the same permission as triggering one,
+// because knowing the queue is empty or stuck is an operator's question.
+reconciliationRouter.get(
+  "/status",
+  rateLimit.read(),
+  requirePermission(PERMISSIONS.ASSIGNMENT_RECONCILE),
+  reconciliationController.status,
+)
+
+reconciliationRouter.get(
+  "/events",
+  rateLimit.read(),
+  requirePermission(PERMISSIONS.ASSIGNMENT_RECONCILE),
+  reconciliationController.listEvents,
 )

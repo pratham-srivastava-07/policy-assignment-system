@@ -1,6 +1,17 @@
 import { OutboxEvent, Prisma, PrismaClass } from "@policy/db"
-import { OutboxAggregateType, OutboxEventType } from "@policy/shared"
+import {
+  OUTBOX_STATUSES,
+  OutboxAggregateType,
+  OutboxEventType,
+  OutboxStatus,
+} from "@policy/shared"
 import { TxClient } from "../interfaces/db"
+
+export interface OutboxListFilters {
+  status?: OutboxStatus
+  aggregateType?: string
+  aggregateId?: string
+}
 
 export interface CreateOutboxEventRecord {
   eventType: OutboxEventType | string
@@ -149,6 +160,92 @@ class OutboxEventRepository {
       },
       take: limit,
     })
+  }
+
+  async findForOrganization(
+    organizationId: string,
+    filters: OutboxListFilters,
+    options: { limit: number; offset: number },
+    tx?: TxClient,
+  ): Promise<OutboxEvent[]> {
+
+    return this.db(tx).outboxEvent.findMany({
+      where: this.buildWhere(organizationId, filters),
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: options.limit,
+      skip: options.offset,
+    })
+  }
+
+  async countForOrganization(
+    organizationId: string,
+    filters: OutboxListFilters,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    return this.db(tx).outboxEvent.count({
+      where: this.buildWhere(organizationId, filters),
+    })
+  }
+
+  async countByStatus(
+    organizationId: string,
+    tx?: TxClient,
+  ): Promise<Record<OutboxStatus, number>> {
+
+    const groups = await this.db(tx).outboxEvent.groupBy({
+      by: ["status"],
+      where: {
+        organizationId,
+      },
+      _count: {
+        _all: true,
+      },
+    })
+
+    const counts = Object.fromEntries(
+      OUTBOX_STATUSES.map((status) => [status, 0]),
+    ) as Record<OutboxStatus, number>
+
+    for (const group of groups) {
+
+      counts[group.status] = group._count._all
+    }
+
+    return counts
+  }
+
+  async oldestPendingAt(organizationId: string, tx?: TxClient): Promise<Date | null> {
+
+    const row = await this.db(tx).outboxEvent.findFirst({
+      where: {
+        organizationId,
+        status: "PENDING",
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        createdAt: true,
+      },
+    })
+
+    return row ? row.createdAt : null
+  }
+
+  private buildWhere(
+    organizationId: string,
+    filters: OutboxListFilters,
+  ): Prisma.OutboxEventWhereInput {
+
+    return {
+      organizationId,
+      ...(filters.status !== undefined && { status: filters.status }),
+      ...(filters.aggregateType !== undefined && { aggregateType: filters.aggregateType }),
+      ...(filters.aggregateId !== undefined && { aggregateId: filters.aggregateId }),
+    }
   }
 
   async markProcessed(

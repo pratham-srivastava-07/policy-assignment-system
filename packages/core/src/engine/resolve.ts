@@ -184,6 +184,7 @@ const trailEntry = (
     reason,
     matchedClauses: evaluation ? evaluation.matchedClauses : [],
     failedClause: evaluation?.failedClause ?? null,
+    attributeValues: evaluation?.attributeValues ?? {},
   }
 }
 

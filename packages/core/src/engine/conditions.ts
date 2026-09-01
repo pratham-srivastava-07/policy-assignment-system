@@ -227,6 +227,10 @@ export const evaluateConditions = (
 
   const matchedClauses: ConditionClause[] = []
 
+  // Read every attribute the rule names, not only the ones reached before a
+  // failure: an explanation wants the values behind the whole rule.
+  const attributeValues = readAttributeValues(conditions.all, context)
+
   for (const clause of conditions.all) {
 
     if (!matchesClause(clause, context)) {
@@ -235,6 +239,7 @@ export const evaluateConditions = (
         matched: false,
         matchedClauses,
         failedClause: clause,
+        attributeValues,
       }
     }
 
@@ -244,7 +249,23 @@ export const evaluateConditions = (
   return {
     matched: true,
     matchedClauses,
+    attributeValues,
   }
+}
+
+const readAttributeValues = (
+  clauses: ConditionClause[],
+  context: EmployeeContext,
+): AttributeValues => {
+
+  const values: AttributeValues = {}
+
+  for (const clause of clauses) {
+
+    values[clause.attribute] = readAttribute(clause, context)
+  }
+
+  return values
 }
 
 /** The reason text for a clause that did not hold. */

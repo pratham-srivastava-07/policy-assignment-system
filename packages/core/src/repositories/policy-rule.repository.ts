@@ -22,6 +22,7 @@ export interface PolicyRuleListOptions {
   policyId?: string
   ruleType?: RuleType
   enabled?: boolean
+  search?: string
   limit: number
   offset: number
 }
@@ -342,6 +343,9 @@ class PolicyRuleRepository {
       ...(options.policyId !== undefined && { policyId: options.policyId }),
       ...(options.ruleType !== undefined && { ruleType: options.ruleType }),
       ...(options.enabled !== undefined && { enabled: options.enabled }),
+      ...(options.search !== undefined && {
+        name: { contains: options.search, mode: "insensitive" },
+      }),
     }
   }
 

@@ -282,6 +282,51 @@ export const collectionReadScope = (auth: AuthContext): SubtreeReadScope | null 
 }
 
 /**
+ * Scope check for a resource whose employee is only known after loading it.
+ *
+ * The two middlewares above read the employee id from the URL. An assignment id
+ * names nothing about its employee until the row is fetched, so the controller
+ * loads first and calls this with what it found.
+ */
+export const assertEmployeeReadScope = async (
+  auth: AuthContext,
+  employeeId: string,
+): Promise<void> => {
+
+  if (isSelfScopedRole(auth.role)) {
+
+    if (!auth.employeeId || employeeId !== auth.employeeId) {
+
+      throw new AppError("You may only view your own record", 403, ERROR_CODES.FORBIDDEN)
+    }
+
+    return
+  }
+
+  const scope = collectionReadScope(auth)
+
+  if (!scope) {
+
+    return
+  }
+
+  const inSubtree = await employeeRepository.isInSubtree(
+    auth.organizationId,
+    scope.rootEmployeeId,
+    employeeId,
+  )
+
+  if (!inSubtree) {
+
+    throw new AppError(
+      "You may only view employees in your own reporting line",
+      403,
+      ERROR_CODES.FORBIDDEN,
+    )
+  }
+}
+
+/**
  * Refuses a back-dated write to a caller who may not make one.
  *
  * Back-dating is not a bigger version of writing. An `effectiveFrom` in the past
@@ -367,6 +412,36 @@ const readIsoDateField = (source: unknown, field: string): string | null => {
  * A subtree-scoped role is NOT refused here: their collections do have a
  * narrowing, so they get the filter (`collectionReadScope`) instead of a 403.
  */
+export const denySubtreeScopedRole = () => {
+
+  return (req: AuthedRequest, _res: Response, next: NextFunction): void => {
+
+    try {
+
+      const auth = req.auth
+
+      if (!auth) {
+
+        throw new AppError("Authentication required", 401, ERROR_CODES.UNAUTHENTICATED)
+      }
+
+      if (isSubtreeScopedRole(auth.role)) {
+
+        throw new AppError(
+          `Role ${auth.role} may only access its own reporting line`,
+          403,
+          ERROR_CODES.INSUFFICIENT_PERMISSIONS,
+        )
+      }
+
+      next()
+    } catch (err) {
+
+      next(toHttpError(err))
+    }
+  }
+}
+
 export const denySelfScopedRole = () => {
 
   return (req: AuthedRequest, _res: Response, next: NextFunction): void => {

@@ -601,6 +601,13 @@ model AssignmentResolutionEvent {
   /// Outcome for this rule in this evaluation.
   decision       ResolutionDecision
   reason         String
+  /// The clauses that held, the first that did not, and the employee's value for
+  /// every attribute the rule referenced — all as they stood at evaluation time.
+  /// Without these an explanation could name the losing rule but not the clause,
+  /// and could only show the employee's value as it is today.
+  matchedClauses  Json               @default("[]") @map("matched_clauses")
+  failedClause    Json?              @map("failed_clause")
+  attributeValues Json               @default("{}") @map("attribute_values")
   /// When the engine ran — an instant, not an effective date.
   evaluatedAt    DateTime           @map("evaluated_at") @db.Timestamptz(6)
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)

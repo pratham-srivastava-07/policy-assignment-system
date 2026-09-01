@@ -426,6 +426,9 @@ export class ResolutionService implements ResolutionServiceInterface {
         categoryId: entry.categoryId,
         decision: entry.decision,
         reason: entry.reason,
+        matchedClauses: entry.matchedClauses,
+        failedClause: entry.failedClause,
+        attributeValues: entry.attributeValues,
         evaluatedAt,
       }))
 
@@ -569,12 +572,29 @@ export class ResolutionService implements ResolutionServiceInterface {
       categoryId: event.categoryId,
       decision: event.decision,
       reason: event.reason,
-      // The clauses are not stored on the event: the rule version snapshot holds
-      // the conditions as they were, and re-deriving which of them matched would
-      // be a second evaluation pretending to be a record.
-      matchedClauses: [],
-      failedClause: null,
+      matchedClauses: this.storedClauses(event.matchedClauses),
+      failedClause: this.storedClause(event.failedClause),
+      attributeValues: this.storedAttributeValues(event.attributeValues),
     }
+  }
+
+  private storedClauses(value: unknown): ConditionClause[] {
+
+    return Array.isArray(value) ? (value as ConditionClause[]) : []
+  }
+
+  private storedClause(value: unknown): ConditionClause | null {
+
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as ConditionClause)
+      : null
+  }
+
+  private storedAttributeValues(value: unknown): AttributeValues {
+
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as AttributeValues)
+      : {}
   }
 
   private toResolutionDTO(result: ResolutionResult): ResolutionDTO {

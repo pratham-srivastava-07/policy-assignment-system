@@ -1,5 +1,10 @@
 import { NextFunction, Response } from "express"
-import { EmployeeAttributeHistoryDTO, EmployeeDTO, Page } from "@policy/shared"
+import {
+  EmployeeAttributeHistoryDTO,
+  EmployeeDTO,
+  EmployeeGroupMembershipDTO,
+  Page,
+} from "@policy/shared"
 import { SubtreeReadScope } from "@policy/core"
 import {
   CreateEmployeeInput,
@@ -75,6 +80,12 @@ export interface EmployeeServiceInterface {
     organizationId: string,
     id: string,
   ): Promise<EmployeeAttributeHistoryDTO[]>
+
+  getGroups(
+    organizationId: string,
+    id: string,
+    asOf?: string,
+  ): Promise<EmployeeGroupMembershipDTO[]>
 }
 
 export interface IEmployeeController {
@@ -85,4 +96,5 @@ export interface IEmployeeController {
   patch(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   terminate(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
   getAttributeHistory(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
+  getGroups(req: AuthedRequest, res: Response, next: NextFunction): Promise<void>
 }

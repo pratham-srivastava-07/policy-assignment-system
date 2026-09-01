@@ -1,6 +1,12 @@
 import { Policy, PolicyStatus, Prisma, PrismaClass } from "@policy/db"
 import { TxClient } from "../interfaces/db"
 
+export interface PolicyListFilters {
+  categoryId?: string
+  status?: PolicyStatus
+  search?: string
+}
+
 /** A policy joined to the category that supplies its cardinality. */
 export type PolicyWithCategory = Prisma.PolicyGetPayload<{
   include: {
@@ -72,18 +78,29 @@ class PolicyRepository {
     })
   }
 
+  private buildWhere(
+    organizationId: string,
+    options: PolicyListFilters,
+  ): Prisma.PolicyWhereInput {
+
+    return {
+      organizationId,
+      ...(options.categoryId !== undefined && { categoryId: options.categoryId }),
+      ...(options.status !== undefined && { status: options.status }),
+      ...(options.search !== undefined && {
+        name: { contains: options.search, mode: "insensitive" },
+      }),
+    }
+  }
+
   async findMany(
     organizationId: string,
-    options: { categoryId?: string; status?: PolicyStatus; limit: number; offset: number },
+    options: PolicyListFilters & { limit: number; offset: number },
     tx?: TxClient,
   ): Promise<Policy[]> {
 
     return this.db(tx).policy.findMany({
-      where: {
-        organizationId,
-        ...(options.categoryId !== undefined && { categoryId: options.categoryId }),
-        ...(options.status !== undefined && { status: options.status }),
-      },
+      where: this.buildWhere(organizationId, options),
       orderBy: {
         name: "asc",
       },
@@ -94,16 +111,12 @@ class PolicyRepository {
 
   async count(
     organizationId: string,
-    options: { categoryId?: string; status?: PolicyStatus } = {},
+    options: PolicyListFilters = {},
     tx?: TxClient,
   ): Promise<number> {
 
     return this.db(tx).policy.count({
-      where: {
-        organizationId,
-        ...(options.categoryId !== undefined && { categoryId: options.categoryId }),
-        ...(options.status !== undefined && { status: options.status }),
-      },
+      where: this.buildWhere(organizationId, options),
     })
   }
 

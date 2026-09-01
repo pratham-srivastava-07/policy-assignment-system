@@ -14,7 +14,7 @@ import {
 } from "../validators"
 import { toHttpError } from "@policy/core"
 import { requireAuthContext } from "../middlewares/auth"
-import { collectionReadScope } from "../middlewares/permission"
+import { assertEmployeeReadScope, collectionReadScope } from "../middlewares/permission"
 
 /**
  * Reads over materialized policy state, plus the two engine runs that write
@@ -77,9 +77,13 @@ export class AssignmentController implements IAssignmentController {
       const auth = requireAuthContext(req)
       const { id } = idParam.parse(req.params)
 
+      const explanation = await this.service.explain(auth.organizationId, id)
+
+      await assertEmployeeReadScope(auth, explanation.assignment.employeeId)
+
       res.status(200).json({
         success: true,
-        data: await this.service.explain(auth.organizationId, id),
+        data: explanation,
       })
     } catch (err) {
 

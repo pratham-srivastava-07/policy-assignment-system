@@ -2,12 +2,13 @@ import {
   Cardinality,
   EmployeeStatus,
   OrganizationRole,
+  OutboxStatus,
   PolicyStatus,
   ResolutionDecision,
   ResolutionStatus,
   RuleType,
 } from "./enums"
-import { ConditionClause, RuleConditions } from "./conditions"
+import { AttributeValues, ConditionClause, RuleConditions } from "./conditions"
 import { TrackedEmployeeAttribute } from "./constants"
 
 /**
@@ -178,6 +179,16 @@ export interface GroupMemberDTO {
   createdAt: IsoDateTime
 }
 
+/** One employee's membership of one group — the employee-side view. */
+export interface EmployeeGroupMembershipDTO {
+  id: string
+  groupId: string
+  groupName: string
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+  createdAt: IsoDateTime
+}
+
 // ---------------------------------------------------------------------------
 // Policies
 // ---------------------------------------------------------------------------
@@ -263,6 +274,28 @@ export interface AuditEventDTO {
 }
 
 // ---------------------------------------------------------------------------
+// Reconciliation — the outbox, read-only
+// ---------------------------------------------------------------------------
+
+export interface ReconciliationEventDTO {
+  id: string
+  eventType: string
+  aggregateType: string
+  aggregateId: string
+  status: OutboxStatus
+  attempts: number
+  availableAt: IsoDateTime
+  processedAt: IsoDateTime | null
+  createdAt: IsoDateTime
+}
+
+export interface ReconciliationStatusDTO {
+  counts: Record<OutboxStatus, number>
+  /** When the oldest still-PENDING row was written; the relay's lag, in effect. */
+  oldestPendingAt: IsoDateTime | null
+}
+
+// ---------------------------------------------------------------------------
 // Assignments and explanations
 // ---------------------------------------------------------------------------
 
@@ -287,6 +320,20 @@ export interface AssignmentDTO {
   updatedAt: IsoDateTime
 }
 
+/** One holder of a policy — the policy-side view of an assignment. */
+export interface PolicyAssignmentDTO {
+  id: string
+  employeeId: string
+  employeeName: string
+  employeeEmail: string
+  sourceRuleId: string
+  sourceRuleVersion: number
+  sourceRuleName: string
+  resolutionStatus: ResolutionStatus
+  effectiveFrom: IsoDate
+  effectiveTo: IsoDate | null
+}
+
 /**
  * One rule the engine considered, and what became of it.
  *
@@ -307,6 +354,8 @@ export interface ResolutionTrailEntryDTO {
   matchedClauses: ConditionClause[]
   /** The first clause that did not hold, when `decision` is NOT_MATCHED. */
   failedClause: ConditionClause | null
+  /** The employee's value for every attribute the rule referenced, as evaluated. */
+  attributeValues: AttributeValues
 }
 
 /** What the engine decided for one policy category. */

@@ -53,4 +53,12 @@ export const asOfPaginationQuery = paginationQuery.extend({
   asOf: isoDate.optional(),
 })
 
+export const asOfQuery = z
+  .object({
+    asOf: isoDate.optional(),
+  })
+  .strict()
+
 export type PaginationQuery = z.infer<typeof paginationQuery>
+
+export type AsOfPaginationQuery = z.infer<typeof asOfPaginationQuery>

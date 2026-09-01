@@ -31,6 +31,19 @@ export type AssignmentWithContext = Prisma.AssignmentGetPayload<{
   }
 }>
 
+export type AssignmentWithHolder = Prisma.AssignmentGetPayload<{
+  include: {
+    employee: {
+      select: {
+        id: true
+        name: true
+        email: true
+      }
+    }
+    sourceRuleVersionRow: true
+  }
+}>
+
 /**
  * Materialized policy assignments.
  *
@@ -152,7 +165,7 @@ class AssignmentRepository {
     asOf: Date,
     options: { limit: number; offset: number },
     tx?: TxClient,
-  ): Promise<Assignment[]> {
+  ): Promise<AssignmentWithHolder[]> {
 
     return this.db(tx).assignment.findMany({
       where: {
@@ -160,11 +173,37 @@ class AssignmentRepository {
         policyId,
         ...this.effectiveOn(asOf),
       },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        sourceRuleVersionRow: true,
+      },
       orderBy: {
         effectiveFrom: "desc",
       },
       take: options.limit,
       skip: options.offset,
+    })
+  }
+
+  async countForPolicyAsOf(
+    organizationId: string,
+    policyId: string,
+    asOf: Date,
+    tx?: TxClient,
+  ): Promise<number> {
+
+    return this.db(tx).assignment.count({
+      where: {
+        organizationId,
+        policyId,
+        ...this.effectiveOn(asOf),
+      },
     })
   }
 

@@ -10,6 +10,7 @@ import {
   listPolicyCategoriesQuerySchema,
   patchPolicyCategorySchema,
   patchPolicySchema,
+  policyAssignmentsQuerySchema,
   replacePolicySchema,
 } from "../validators"
 import { toHttpError } from "@policy/core"
@@ -211,6 +212,28 @@ export class PolicyController implements IPolicyController {
       res.status(200).json({
         success: true,
         data: await this.service.delete(auth.organizationId, auth.userId, id),
+      })
+    } catch (err) {
+
+      next(toHttpError(err))
+    }
+  }
+
+  listAssignments = async (
+    req: AuthedRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+
+    try {
+
+      const auth = requireAuthContext(req)
+      const { id } = idParam.parse(req.params)
+      const query = policyAssignmentsQuerySchema.parse(req.query)
+
+      res.status(200).json({
+        success: true,
+        data: await this.service.listAssignments(auth.organizationId, id, query),
       })
     } catch (err) {
 

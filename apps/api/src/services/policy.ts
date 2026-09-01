@@ -3,10 +3,14 @@ import {
   AUDIT_ENTITY_TYPES,
   ERROR_CODES,
   Page,
+  PolicyAssignmentDTO,
   PolicyCategoryDTO,
   PolicyDTO,
+  fromIsoDate,
+  todayIsoDate,
 } from "@policy/shared"
 import {
+  AssignmentRepository,
   AuditEventRepository,
   Policy,
   PolicyCategory,
@@ -19,6 +23,7 @@ import {
   PolicyServiceInterface,
 } from "../interfaces/policy"
 import {
+  AsOfPaginationQuery,
   CreatePolicyCategoryInput,
   CreatePolicyInput,
   ListPoliciesQuery,
@@ -28,7 +33,7 @@ import {
   ReplacePolicyInput,
 } from "../validators"
 import { AppError } from "@policy/core"
-import { toPolicyCategoryDTO, toPolicyDTO } from "@policy/core"
+import { toPolicyAssignmentDTO, toPolicyCategoryDTO, toPolicyDTO } from "@policy/core"
 
 /**
  * Policy categories — the unit that carries assignment cardinality.
@@ -242,7 +247,31 @@ export class PolicyService implements PolicyServiceInterface {
     private policies: PolicyRepository,
     private categories: PolicyCategoryRepository,
     private audit: AuditEventRepository,
+    private assignments: AssignmentRepository,
   ) {}
+
+  async listAssignments(
+    organizationId: string,
+    id: string,
+    query: AsOfPaginationQuery,
+  ): Promise<Page<PolicyAssignmentDTO>> {
+
+    await this.require(organizationId, id)
+
+    const asOf = fromIsoDate(query.asOf ?? todayIsoDate())
+
+    const [rows, total] = await Promise.all([
+      this.assignments.findForPolicyAsOf(organizationId, id, asOf, query),
+      this.assignments.countForPolicyAsOf(organizationId, id, asOf),
+    ])
+
+    return {
+      items: rows.map(toPolicyAssignmentDTO),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    }
+  }
 
   async create(
     organizationId: string,

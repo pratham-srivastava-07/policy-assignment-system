@@ -90,6 +90,13 @@ export type ConditionScalar = string | number | boolean
 
 export type ConditionValue = ConditionScalar | ConditionScalar[]
 
+/**
+ * The employee's own value for each attribute a rule referenced, captured at
+ * evaluation time. Recorded alongside the decision so an explanation can say
+ * "state = CA (Alice: NY)" for the day it was decided, not for today.
+ */
+export type AttributeValues = Partial<Record<ConditionAttribute, ConditionScalar | string[] | null>>
+
 /** One requirement inside a rule. */
 export interface ConditionClause {
   attribute: ConditionAttribute

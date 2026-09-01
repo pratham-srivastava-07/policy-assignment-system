@@ -165,6 +165,7 @@ export const listRulesQuerySchema = paginationQuery
       .enum(["true", "false"])
       .transform((value) => value === "true")
       .optional(),
+    search: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
 

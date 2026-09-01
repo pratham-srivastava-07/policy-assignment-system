@@ -19,6 +19,8 @@ export const listAuditEventsQuerySchema = paginationQuery
     from: isoDate.optional(),
     /** Exclusive upper bound on the event day. */
     to: isoDate.optional(),
+    /** Matches `action` and `entityType`; the only text columns on the row. */
+    search: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
   .refine(

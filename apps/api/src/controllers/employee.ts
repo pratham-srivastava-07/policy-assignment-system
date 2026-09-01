@@ -3,6 +3,7 @@ import { AuthedRequest } from "../interfaces/auth"
 import { IEmployeeController } from "../interfaces/employee"
 import { EmployeeService } from "../services/employee"
 import {
+  asOfQuery,
   createEmployeeSchema,
   idParam,
   listEmployeesQuerySchema,
@@ -152,6 +153,24 @@ export class EmployeeController implements IEmployeeController {
       res.status(200).json({
         success: true,
         data: await this.service.getAttributeHistory(auth.organizationId, id),
+      })
+    } catch (err) {
+
+      next(toHttpError(err))
+    }
+  }
+
+  getGroups = async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
+
+    try {
+
+      const auth = requireAuthContext(req)
+      const { id } = idParam.parse(req.params)
+      const { asOf } = asOfQuery.parse(req.query)
+
+      res.status(200).json({
+        success: true,
+        data: await this.service.getGroups(auth.organizationId, id, asOf),
       })
     } catch (err) {
 

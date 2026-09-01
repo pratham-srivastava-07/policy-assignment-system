@@ -14,6 +14,17 @@ export type EmployeeGroupWithEmployee = Prisma.EmployeeGroupGetPayload<{
   }
 }>
 
+export type EmployeeGroupWithGroup = Prisma.EmployeeGroupGetPayload<{
+  include: {
+    group: {
+      select: {
+        id: true
+        name: true
+      }
+    }
+  }
+}>
+
 /**
  * Effective-dated group membership.
  *
@@ -145,6 +156,31 @@ class EmployeeGroupRepository {
     })
 
     return rows.map((row) => row.groupId)
+  }
+
+  async findMembershipsForEmployee(
+    employeeId: string,
+    asOf: Date,
+    tx?: TxClient,
+  ): Promise<EmployeeGroupWithGroup[]> {
+
+    return this.db(tx).employeeGroup.findMany({
+      where: {
+        employeeId,
+        ...this.effectiveOn(asOf),
+      },
+      include: {
+        group: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        effectiveFrom: "desc",
+      },
+    })
   }
 
   /** Full membership history for an employee, newest first. */

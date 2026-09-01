@@ -379,20 +379,6 @@ export class OutboxRelay {
     }
   }
 
-  /**
-   * One job per employee for a row that fans out.
-   *
-   * Shared by both fan-out paths so the jobId rule is stated once. One row
-   * becoming many jobs means the row id alone would collapse them into one, so
-   * the employee is what makes each job distinct — while a redelivered row still
-   * lands on the jobs that already exist.
-   *
-   * Joined with "--", never ":". BullMQ uses the colon as its Redis key
-   * separator and rejects a custom id containing one outright, so a colon here
-   * throws on every fan-out enqueue while the single-employee path (a bare uuid)
-   * keeps working — a failure that hides in exactly the half of the system that
-   * is hardest to notice.
-   */
   private async enqueueEach(
     row: OutboxEvent,
     employeeIds: string[],

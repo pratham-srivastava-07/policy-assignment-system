@@ -3,6 +3,7 @@ import {
   AUDIT_ENTITY_TYPES,
   EmployeeAttributeHistoryDTO,
   EmployeeDTO,
+  EmployeeGroupMembershipDTO,
   ERROR_CODES,
   OUTBOX_AGGREGATE_TYPES,
   OUTBOX_EVENT_TYPES,
@@ -33,7 +34,11 @@ import {
   ReplaceEmployeeInput,
 } from "../validators"
 import { AppError } from "@policy/core"
-import { toAttributeHistoryDTO, toEmployeeDTO } from "@policy/core"
+import {
+  toAttributeHistoryDTO,
+  toEmployeeDTO,
+  toEmployeeGroupMembershipDTO,
+} from "@policy/core"
 
 /** One attribute that moved, with the values on each side of the change. */
 interface AttributeChange {
@@ -406,6 +411,21 @@ export class EmployeeService implements EmployeeServiceInterface {
     const rows = await this.history.findForEmployee(id)
 
     return rows.map(toAttributeHistoryDTO)
+  }
+
+  async getGroups(
+    organizationId: string,
+    id: string,
+    asOfInput?: string,
+  ): Promise<EmployeeGroupMembershipDTO[]> {
+
+    await this.requireEmployee(organizationId, id)
+
+    const asOf = fromIsoDate(asOfInput ?? todayIsoDate())
+
+    const rows = await this.groups.findMembershipsForEmployee(id, asOf)
+
+    return rows.map(toEmployeeGroupMembershipDTO)
   }
 
   // -------------------------------------------------------------------------

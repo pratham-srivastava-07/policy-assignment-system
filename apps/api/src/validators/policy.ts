@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { CARDINALITIES, POLICY_STATUSES } from "@policy/shared"
-import { paginationQuery, uuid } from "./common"
+import { asOfPaginationQuery, paginationQuery, uuid } from "./common"
 
 // ---------------------------------------------------------------------------
 // Policy categories
@@ -78,8 +78,11 @@ export const listPoliciesQuerySchema = paginationQuery
   .extend({
     categoryId: uuid.optional(),
     status: z.enum(POLICY_STATUSES).optional(),
+    search: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
+
+export const policyAssignmentsQuerySchema = asOfPaginationQuery.strict()
 
 export type CreatePolicyCategoryInput = z.infer<typeof createPolicyCategorySchema>
 

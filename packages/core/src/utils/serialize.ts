@@ -4,6 +4,7 @@ import {
   EmployeeAttributeHistory,
   Group,
   Organization,
+  OutboxEvent,
   Policy,
   PolicyCategory,
   PolicyRule,
@@ -15,12 +16,15 @@ import {
   AuditEventDTO,
   EmployeeAttributeHistoryDTO,
   EmployeeDTO,
+  EmployeeGroupMembershipDTO,
   GroupDTO,
   GroupMemberDTO,
+  PolicyAssignmentDTO,
   PolicyCategoryDTO,
   PolicyDTO,
   PublicOrganization,
   PublicUser,
+  ReconciliationEventDTO,
   ResolutionTrailEntryDTO,
   ResolvedPolicyDTO,
   RuleConditions,
@@ -29,7 +33,12 @@ import {
   tenureDaysAsOf,
   toIsoDate,
 } from "@policy/shared"
-import { AssignmentWithContext, EmployeeGroupWithEmployee } from "../repositories"
+import {
+  AssignmentWithContext,
+  AssignmentWithHolder,
+  EmployeeGroupWithEmployee,
+  EmployeeGroupWithGroup,
+} from "../repositories"
 import { ResolvedPolicy, RuleTrailEntry } from "../engine"
 
 /**
@@ -98,6 +107,17 @@ export const toGroupMemberDTO = (row: EmployeeGroupWithEmployee): GroupMemberDTO
   employeeId: row.employeeId,
   employeeName: row.employee.name,
   employeeEmail: row.employee.email,
+  effectiveFrom: toIsoDate(row.effectiveFrom),
+  effectiveTo: row.effectiveTo ? toIsoDate(row.effectiveTo) : null,
+  createdAt: row.createdAt.toISOString(),
+})
+
+export const toEmployeeGroupMembershipDTO = (
+  row: EmployeeGroupWithGroup,
+): EmployeeGroupMembershipDTO => ({
+  id: row.id,
+  groupId: row.groupId,
+  groupName: row.group.name,
   effectiveFrom: toIsoDate(row.effectiveFrom),
   effectiveTo: row.effectiveTo ? toIsoDate(row.effectiveTo) : null,
   createdAt: row.createdAt.toISOString(),
@@ -214,6 +234,31 @@ export const toAssignmentDTO = (assignment: AssignmentWithContext): AssignmentDT
 })
 
 /** One rule the engine considered, on its way out over HTTP. */
+export const toPolicyAssignmentDTO = (row: AssignmentWithHolder): PolicyAssignmentDTO => ({
+  id: row.id,
+  employeeId: row.employeeId,
+  employeeName: row.employee.name,
+  employeeEmail: row.employee.email,
+  sourceRuleId: row.sourceRuleId,
+  sourceRuleVersion: row.sourceRuleVersion,
+  sourceRuleName: row.sourceRuleVersionRow.name,
+  resolutionStatus: row.resolutionStatus,
+  effectiveFrom: toIsoDate(row.effectiveFrom),
+  effectiveTo: row.effectiveTo ? toIsoDate(row.effectiveTo) : null,
+})
+
+export const toReconciliationEventDTO = (row: OutboxEvent): ReconciliationEventDTO => ({
+  id: row.id,
+  eventType: row.eventType,
+  aggregateType: row.aggregateType,
+  aggregateId: row.aggregateId,
+  status: row.status,
+  attempts: row.attempts,
+  availableAt: row.availableAt.toISOString(),
+  processedAt: row.processedAt ? row.processedAt.toISOString() : null,
+  createdAt: row.createdAt.toISOString(),
+})
+
 export const toTrailEntryDTO = (entry: RuleTrailEntry): ResolutionTrailEntryDTO => ({
   ruleId: entry.ruleId,
   ruleVersion: entry.ruleVersion,
@@ -226,6 +271,7 @@ export const toTrailEntryDTO = (entry: RuleTrailEntry): ResolutionTrailEntryDTO 
   reason: entry.reason,
   matchedClauses: entry.matchedClauses,
   failedClause: entry.failedClause,
+  attributeValues: entry.attributeValues,
 })
 
 /** A policy the engine says should apply, before anything is materialized. */
