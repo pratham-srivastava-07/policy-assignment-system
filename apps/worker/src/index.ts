@@ -77,6 +77,7 @@ const relay = new OutboxRelay(
   outboxEventRepository,
   reconciliationQueue,
   ruleFanOutService,
+  employeeGroupRepository,
 )
 
 const processor = new ReconciliationProcessor(resolutionService, employeeRepository)

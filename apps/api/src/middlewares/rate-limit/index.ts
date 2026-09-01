@@ -12,6 +12,7 @@
  */
 
 import { NextFunction, Response } from "express"
+import IORedis from "ioredis"
 import {
   ERROR_CODES,
   RATE_LIMIT_TIERS,
@@ -19,20 +20,38 @@ import {
 } from "@policy/shared"
 import { AuthedRequest } from "../../interfaces/auth"
 import { AppError, toHttpError } from "@policy/core"
-import { MemoryRateLimitStore, RateLimitStore } from "./store"
+import { env } from "../../config/env"
+import { RateLimitStore } from "./store"
+import { RedisRateLimitStore } from "./redis-store"
 
 export { MemoryRateLimitStore } from "./store"
 
 export type { RateLimitResult, RateLimitStore } from "./store"
 
 /**
+ * The Redis connection backing the store.
+ *
+ * `enableOfflineQueue: false` makes a command fail immediately when Redis is
+ * down instead of queueing behind reconnection attempts — that fast failure is
+ * what lets `RedisRateLimitStore` fall back to the in-memory store on the same
+ * request instead of hanging it. A no-op `error` listener is required so a
+ * dropped connection does not crash the process; `RedisRateLimitStore` reports
+ * the transition itself once it sees a command fail.
+ */
+const redisConnection = new IORedis(env.REDIS_URL, {
+  enableOfflineQueue: false,
+})
+
+redisConnection.on("error", () => {})
+
+/**
  * The process-wide store.
  *
- * Module-level so every tier shares one map and one sweep timer. Swapping this
- * for a Redis-backed store is the only change needed to make limits shared
- * across instances.
+ * Module-level so every tier shares one connection and one fallback map.
+ * Backed by Redis so limits are shared across API instances; falls back to a
+ * per-process bucket when Redis is unreachable.
  */
-export const rateLimitStore: RateLimitStore = new MemoryRateLimitStore()
+export const rateLimitStore: RateLimitStore = new RedisRateLimitStore(redisConnection)
 
 /**
  * Builds the bucket key.

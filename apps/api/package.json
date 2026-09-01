@@ -17,6 +17,7 @@
     "cors": "^2",
     "dotenv": "^17",
     "express": "^5",
+    "ioredis": "^5",
     "zod": "^4"
   },
   "devDependencies": {

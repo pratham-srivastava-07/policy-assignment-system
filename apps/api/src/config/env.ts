@@ -28,6 +28,9 @@ export const env = z
     PORT: z.coerce.number().default(3000),
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
     JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
+    // 6380, not 6379: infra/docker-compose.yml binds Redis there because a
+    // Windows redis-server 3.0.504 squats on 6379 locally.
+    REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   })
   .transform((parsed) => ({
     ...parsed,

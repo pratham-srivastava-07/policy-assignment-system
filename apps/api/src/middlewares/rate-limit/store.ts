@@ -1,22 +1,11 @@
 /**
  * Token bucket storage.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * IMPORTANT — this store is per process.
- *
- * Buckets live in this Node process's heap. That is correct for a single API
- * instance and wrong the moment there are two: behind a load balancer each
- * instance would hold its own buckets, so a caller's effective limit becomes
- * roughly N times the configured one, and which instance they land on decides
- * whether they are throttled.
- *
- * This is a known and accepted limitation, not an oversight. `docs/architecture.md`
- * puts rate limit state in Redis precisely to make it shared, and the
- * `RateLimitStore` interface below exists so a Redis implementation can be
- * dropped in without touching the limiter or any route. Redis is not installed
- * in this project yet, and an untested adapter for it would be dead code, so the
- * memory store is the only implementation for now.
- * ─────────────────────────────────────────────────────────────────────────────
+ * `MemoryRateLimitStore` holds buckets in this Node process's heap, so across N
+ * API instances a caller's effective limit is roughly N times the configured
+ * one. It is no longer what the API runs on: `RedisRateLimitStore` is, and this
+ * is the store it degrades to when Redis is unreachable — per-process limits
+ * being a better outage than no limits or no logins.
  */
 
 import {
@@ -49,7 +38,8 @@ export interface RateLimitStore {
   consume(key: string, tier: RateLimitTier, now?: number): Promise<RateLimitResult>
   reset(key: string, tier: RateLimitTier): Promise<void>
   clear(): Promise<void>
-  size(): number
+  /** Redis cannot answer this synchronously; the memory store still can. */
+  size(): number | Promise<number>
   stop(): void
 }
 

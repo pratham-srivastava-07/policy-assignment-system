@@ -1,5 +1,10 @@
 import { Queue } from "bullmq"
-import { OutboxEvent, OutboxEventRepository, RuleFanOutService } from "@policy/core"
+import {
+  EmployeeGroupRepository,
+  OutboxEvent,
+  OutboxEventRepository,
+  RuleFanOutService,
+} from "@policy/core"
 import { OUTBOX_EVENT_TYPES } from "@policy/shared"
 import { env } from "./config/env"
 import { RECONCILE_EMPLOYEE_JOB, ReconcileEmployeeJob } from "./queue"
@@ -7,15 +12,18 @@ import { RECONCILE_EMPLOYEE_JOB, ReconcileEmployeeJob } from "./queue"
 /**
  * What the relay decided to do with one row.
  *
- *   `enqueue`  — a job was built for it;
- *   `fanOut`   — it names a RULE, whose affected population has to be derived
- *                before any job can be built;
- *   `settle`   — nothing to enqueue, and nothing will ever need to be;
- *   `reject`   — this row names work the relay cannot express as a job.
+ *   `enqueue`     — a job was built for it;
+ *   `fanOut`      — it names a RULE, whose affected population has to be derived
+ *                   before any job can be built;
+ *   `groupFanOut` — it names a deleted GROUP, whose affected population is the
+ *                   roster the deletion just emptied;
+ *   `settle`      — nothing to enqueue, and nothing will ever need to be;
+ *   `reject`      — this row names work the relay cannot express as a job.
  */
 type Plan =
   | { action: "enqueue"; job: ReconcileEmployeeJob }
   | { action: "fanOut"; ruleId: string; ruleVersion: number | null; asOf: string | null }
+  | { action: "groupFanOut"; groupId: string; deletedOn: string | null }
   | { action: "settle"; reason: string }
   | { action: "reject"; reason: string }
 
@@ -26,6 +34,8 @@ interface OutboxPayload {
   effectiveFrom?: unknown
   ruleId?: unknown
   ruleVersion?: unknown
+  groupId?: unknown
+  deletedOn?: unknown
 }
 
 /**
@@ -64,6 +74,7 @@ export class OutboxRelay {
     private outbox: OutboxEventRepository,
     private queue: Queue<ReconcileEmployeeJob>,
     private fanOut: RuleFanOutService,
+    private memberships: EmployeeGroupRepository,
   ) {}
 
   /** Begin polling. Returns immediately; the loop runs on its own. */
@@ -223,6 +234,13 @@ export class OutboxRelay {
       return
     }
 
+    if (plan.action === "groupFanOut") {
+
+      await this.dispatchGroupFanOut(row, plan)
+
+      return
+    }
+
     if (plan.action === "reject") {
 
       // Not a transient failure: nothing about waiting makes this row
@@ -292,32 +310,7 @@ export class OutboxRelay {
         )
       }
 
-      for (const employeeId of result.employeeIds) {
-
-        await this.queue.add(
-          RECONCILE_EMPLOYEE_JOB,
-          {
-            outboxEventId: row.id,
-            organizationId: row.organizationId,
-            employeeId,
-            eventType: row.eventType,
-            ...(plan.asOf !== null && { asOf: plan.asOf }),
-          },
-          {
-            // One row fans out to many jobs, so the row id alone would collapse
-            // them into one. The employee makes each job distinct while keeping
-            // a redelivered row idempotent.
-            //
-            // Joined with "--", never ":". BullMQ uses the colon as its Redis
-            // key separator and rejects a custom id containing one outright, so
-            // a colon here throws on every fan-out enqueue while the
-            // single-employee path (a bare uuid) keeps working — which is a
-            // failure that hides in exactly the half of the system that is
-            // hardest to notice.
-            jobId: `${row.id}--${employeeId}`,
-          },
-        )
-      }
+      await this.enqueueEach(row, result.employeeIds, plan.asOf)
 
       await this.outbox.markProcessed(row.id)
 
@@ -331,6 +324,96 @@ export class OutboxRelay {
     } catch (error) {
 
       await this.retry(row, error)
+    }
+  }
+
+  /**
+   * A group was deleted. Reconcile everyone who was in it.
+   *
+   * The population is the roster the deletion emptied — the memberships that
+   * were open immediately before `deletedOn`, which the soft delete END-DATED
+   * rather than removed. That is the whole reason groups are soft-deleted: a
+   * hard delete cascaded `employee_groups` away, leaving this row naming a group
+   * with no members to enumerate, and every former member holding an assignment
+   * no reconciliation would ever remove.
+   *
+   * There is no "previous conditions" arm to union in, unlike a rule fan-out.
+   * Nobody can newly QUALIFY because of a deletion, so the former roster is the
+   * complete affected set; anyone in it who was not actually holding a
+   * group-conferred policy simply reconciles to no change, because the
+   * resolution is a diff.
+   *
+   * `deletedOn` is also the `asOf` the jobs carry: that is the day the
+   * memberships closed, so it is the day from which the resolution differs.
+   *
+   * An empty group settles as PROCESSED. Deleting a group nobody was in is an
+   * ordinary thing to do, not a failure.
+   */
+  private async dispatchGroupFanOut(
+    row: OutboxEvent,
+    plan: { groupId: string; deletedOn: string | null },
+  ): Promise<void> {
+
+    try {
+
+      const deletedOn = plan.deletedOn
+        ? new Date(`${plan.deletedOn}T00:00:00.000Z`)
+        : new Date()
+
+      const employeeIds = await this.memberships.findMemberIdsOpenBeforeDeletion(
+        plan.groupId,
+        deletedOn,
+      )
+
+      await this.enqueueEach(row, employeeIds, plan.deletedOn)
+
+      await this.outbox.markProcessed(row.id)
+
+      console.log(
+        `[relay] ${row.eventType} ${row.id}: group ${plan.groupId} fanned out to ` +
+          `${employeeIds.length} former member(s)`,
+      )
+    } catch (error) {
+
+      await this.retry(row, error)
+    }
+  }
+
+  /**
+   * One job per employee for a row that fans out.
+   *
+   * Shared by both fan-out paths so the jobId rule is stated once. One row
+   * becoming many jobs means the row id alone would collapse them into one, so
+   * the employee is what makes each job distinct — while a redelivered row still
+   * lands on the jobs that already exist.
+   *
+   * Joined with "--", never ":". BullMQ uses the colon as its Redis key
+   * separator and rejects a custom id containing one outright, so a colon here
+   * throws on every fan-out enqueue while the single-employee path (a bare uuid)
+   * keeps working — a failure that hides in exactly the half of the system that
+   * is hardest to notice.
+   */
+  private async enqueueEach(
+    row: OutboxEvent,
+    employeeIds: string[],
+    asOf: string | null,
+  ): Promise<void> {
+
+    for (const employeeId of employeeIds) {
+
+      await this.queue.add(
+        RECONCILE_EMPLOYEE_JOB,
+        {
+          outboxEventId: row.id,
+          organizationId: row.organizationId,
+          employeeId,
+          eventType: row.eventType,
+          ...(asOf !== null && { asOf }),
+        },
+        {
+          jobId: `${row.id}--${employeeId}`,
+        },
+      )
     }
   }
 
@@ -422,13 +505,11 @@ export class OutboxRelay {
    * query where the clauses allow and evaluating only the residue in memory, as
    * `docs/architecture.md` §12 asks.
    *
-   * DECISION: `group.deleted` is still REJECTED. Its affected population is the
-   * group's former members, and deleting the group takes the memberships with
-   * it, so by the time this row is read there is nothing left to enumerate.
-   * Recovering it means either soft-deleting groups or naming the members in the
-   * payload — a producer-side change, not something the relay can fix. The row
-   * stays FAILED on the table, visible, as reconciliation that is owed and not
-   * done.
+   * `group.deleted` fans out too, from a different source: its payload names the
+   * group and the day it went, and the affected population is the roster the
+   * deletion emptied. That only works because groups are SOFT-deleted — a hard
+   * delete cascaded the memberships away and left this row unanswerable, which
+   * is what the soft delete was introduced to fix.
    */
   private plan(row: OutboxEvent): Plan {
 
@@ -470,11 +551,27 @@ export class OutboxRelay {
       }
     }
 
+    // A group deletion names neither an employee nor a rule. Its population
+    // comes from the memberships the deletion end-dated, which is why this is
+    // read from the event type rather than inferred from the payload: only a
+    // deletion has a former roster to recover.
+    const groupId = this.text(payload.groupId)
+
+    if (row.eventType === OUTBOX_EVENT_TYPES.GROUP_DELETED && groupId) {
+
+      return {
+        action: "groupFanOut",
+        groupId,
+        deletedOn: this.text(payload.deletedOn),
+      }
+    }
+
     if (!employeeId) {
 
       return {
         action: "reject",
-        reason: "no employeeId and no ruleId in the payload, so the affected population cannot be derived",
+        reason:
+          "no employeeId, ruleId or deleted groupId in the payload, so the affected population cannot be derived",
       }
     }
 
