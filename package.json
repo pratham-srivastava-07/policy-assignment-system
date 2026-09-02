@@ -4,6 +4,7 @@
   "workspaces": [
     "apps/api",
     "apps/worker",
+    "apps/dashboard-panel",
     "packages/*"
   ],
   "scripts": {
@@ -12,6 +13,9 @@
     "prisma:generate": "npm run prisma:generate --workspace @policy/db",
     "prisma:migrate": "npm run prisma:migrate --workspace @policy/db",
     "prisma:studio": "npm run prisma:studio --workspace @policy/db",
+    "seed": "npm run seed --workspace @policy/db",
+    "dev:web": "npm run dev --workspace dashboard-panel",
+    "build:web": "npm run build --workspace dashboard-panel",
     "dev:worker": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run build --workspace @policy/core && npm run dev --workspace worker",
     "start:api": "npm run start --workspace api",
     "start:worker": "npm run start --workspace worker",

@@ -1,4 +1,5 @@
 import {
+  AttributeValues,
   ConditionClause,
   ConditionScalar,
   ConditionValue,

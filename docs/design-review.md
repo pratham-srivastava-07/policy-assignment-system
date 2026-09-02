@@ -408,3 +408,136 @@ In dependency order, all before the frontend's Phase 3:
 4. `search` on `listRulesQuerySchema`, `listPoliciesQuerySchema`, `listAuditEventsQuerySchema` and the three repositories behind them.
 5. `GET /reconciliation/events` — read-only outbox status counts and FAILED rows; permission-gated.
 6. Self-scope guard on `GET /assignments/:id/explanation` (`routes/assignment.ts:28-33`).
+
+### Work package status (2026-09-02)
+
+All six items implemented; `npm run build` green across all five workspaces.
+**Runtime-unverified** — Docker was down for the whole session, so nothing below has
+been exercised against a live database or Redis.
+
+| # | Item | State |
+|---|---|---|
+| 6 | Self-scope guard on `GET /assignments/:id/explanation` | Done. New `assertEmployeeReadScope` in `middlewares/permission.ts`; the controller loads the explanation, then checks the employee against the caller's scope before responding. Closes the gap where any `EMPLOYEE` could read any assignment's explanation by id. |
+| 2 | `GET /employees/:id/groups?asOf=` | Done. New `EmployeeGroupMembershipDTO`, `findMembershipsForEmployee`, `toEmployeeGroupMembershipDTO`; route gated `requireSelfOrPermission` + `requireSubtreeScope`, matching the sibling employee reads. |
+| 3 | `GET /policies/:id/assignments?asOf=` | Done. New `PolicyAssignmentDTO`, `AssignmentWithHolder`, `countForPolicyAsOf`; `findForPolicyAsOf` now joins the employee and rule version. Refuses self- AND subtree-scoped roles (new `denySubtreeScopedRole`): a manager's subtree is not expressible as a policy-side filter, so they are directed to the employee-side reads. |
+| 4 | `search` on rules / policies / audit-events | Done. Rules and policies match on `name`; audit matches `action` or `entityType` (the only text columns on the row). `PolicyListFilters` extracted so `findMany` and `count` share one `buildWhere`. |
+| 5 | `GET /reconciliation/status` and `/events` | Done. New reconciliation slice (validator, interface, service, controller, route) plus `countByStatus`, `oldestPendingAt`, `findForOrganization`, `countForOrganization` on the outbox repository. `status` returns per-status counts and the oldest PENDING row's age — the relay's lag. Gated on `assignment:reconcile`. |
+| 1 | Persist clauses on `assignment_resolution_events` | Done, **plus attribute values**. Migration `20260902000000_resolution_event_clauses` adds `matched_clauses`, `failed_clause`, `attribute_values`. `ConditionEvaluation` and `RuleTrailEntry` now carry `attributeValues`; `evaluateConditions` reads every attribute the rule references — not only those reached before a failure. `toStoredTrailEntry` reads all three back instead of returning empties. |
+
+**Assumption made without asking** (flagged, trivially reversible): item 1 persists the
+employee's actual attribute value alongside the clauses, as `attribute_values` JSONB.
+This is what closes Finding 2 — "Alice: CA" now comes from the evaluation's own record
+rather than from today's employee row, which is the wrong row for a historical
+assignment. Drop the column if you'd rather not carry it.
+
+**Not done, deliberately:** `MatchingEmployeeDTO` (the rule editor's per-employee match
+preview) still carries clauses without attribute values. The review did not flag it and
+near-miss does not need it — `PreviewDTO.resolution` now carries values through
+`toTrailEntryDTO`. Say if you want it there too.
+
+### Before this can be trusted
+
+1. Start Docker, then `npm run prisma:migrate` to apply `20260902000000_resolution_event_clauses`. The migration is **hand-written** (no shadow database available) — it is the fifth such file; see the note in `20260830120000_group_soft_delete`.
+2. Reconcile one employee and confirm `GET /assignments/:id/explanation` returns populated `matchedClauses` / `failedClause` / `attributeValues`. Rows written *before* the migration keep `[]` / NULL / `{}` — correct, not a bug.
+3. Exercise the four new read endpoints for shape and for the 403s (`EMPLOYEE` on `/policies/:id/assignments`, `MANAGER` on the same, `EMPLOYEE` on another employee's explanation).
+4. The rate-limit and `group.deleted` work from earlier in the session is still unverified too — same blocker.
+
+### `design.md` revision status (2026-09-02)
+
+`design.md` has been rewritten as v2 against the decisions above. Its §0 carries
+the change table; this is the finding-by-finding disposition.
+
+**Closed by the backend work package** (the spec now matches shipped code):
+1, 2, 3, 4, 5, 6, 16.
+
+**Closed by respecifying the document:**
+7 (name + `ruleType` in the editor, §18.1), 8 (no "Publish", §18.7),
+12 (`asOf` scope stated exactly, §8.2–8.3), 13 (group filter and sorting cut, §11.2),
+14 (three columns cut with reasons, §11.1), 15 (manual reconcile is synchronous, §31.1),
+17 (permissions derived from `ROLE_PERMISSIONS`, §10.1), 18 (Zod stays in `apps/api`, §36.2),
+19 (role × screen matrix, §10.3), 20 (employee audit scope stated, §13.5),
+21 (fabricated audit line removed, §32.2), 22 (action filter → `search`, §32.1),
+23 (invented 409 replaced with real error codes, §40.4),
+24 (effective-date control everywhere it is gated, §16.1),
+25 (override create/revoke with the tie-break caveat, §30),
+26 (policy categories, §25), 27 (archive warning, §41.3),
+28 (ordinal computed from shared constants, scoped to one policy, §17.4),
+29 (exactness warning + typeahead, §18.4), 30 (Settings written, §46),
+31 (auth screens, §9), 32 (preview moved to Phase 2, §48), 33 (429 moved to Phase 1, §40.5),
+34 (Timeline scoped to attribute + group history, §13.4),
+35 (personas §2, endpoint list §4, screen inventory §5),
+36 (concrete design tokens, §38), 37 (every §3 claim now cites a route or field),
+38 (decision → label table, §14.4), 39 (`MATCHED_LOST` branches on cardinality, §14.4),
+40 (trail filtered by category and labelled with its evaluation date, §14.5–14.6),
+41 (status default + terminated state + terminate action, §11.3, §12.2–12.3),
+42 (deleted-group state, §29.5), 43 (counts moved to detail pages, §26.1, §29.1),
+44 (effective-dated membership dialogs, §29.4), 45 (form-level error banner, §40.2),
+46 (rule status derived, filter is `enabled` only, §17.2), 47 (filters cut, §17.1),
+48 (rule count column cut, §26.1), 49 (lookup strategy, §17.3, §32.3),
+50 (Manager picker, no `isManager` toggle, no preview, §16.2),
+51 (tenure shown as both years and days, §15.3), 52 (duplicate clauses blocked, §18.3),
+53 (zero-length intervals dropped, §8.4), 54 (pre-hire-date state, §8.4),
+55 (preview baseline caveat, §16.3), 56 (rule lifecycle actions, §24),
+57 (application access, §28), 58 (employee create, §12.1),
+59 (Phase 1/7 overlap resolved, §48), 60 (401 and 429 as states, §9.3, §40.5),
+61 (row selection removed, §11.4), 62 (page size, debounce, breakpoints, §11.4, §43),
+63 (terminology appendix), 64 (examples made internally consistent),
+65 (hand-waves replaced with values or stated gaps), 66 (35 observable criteria, §49),
+67 (`/api/v1` stated, §4.1), 69 (headings and a table of contents),
+70 (dropped brief items now stated, §3.3 and Appendix B),
+71 (`sweptWholeOrganization` not surfaced; the real cost is stated in §20.1).
+
+**Open, by decision:** 68 (doc path references — `docs/db.md` vs `docs/database.md`
+is in `CLAUDE.md` and `frontend.md`, not `design.md`); the review's Q8 (whether
+`design.md` is the `docs/frontend.md` deliverable).
+
+**One decision the document made rather than the author:** §9.2 chooses
+`sessionStorage` for the bearer token, and says so in the section. That was Q5.
+
+### Verification completed (2026-09-02, later the same day)
+
+Docker came up. The checklist above is now **satisfied**, against a live stack:
+Postgres 16, Redis 7, the API on `:3000`, and the reconciliation worker draining
+the outbox.
+
+1. **Migration applied.** `20260902000000_resolution_event_clauses` is the fifth
+   applied migration. `\d assignment_resolution_events` confirms
+   `matched_clauses jsonb NOT NULL DEFAULT '[]'`, `failed_clause jsonb NULL`,
+   `attribute_values jsonb NOT NULL DEFAULT '{}'`.
+
+2. **Clause persistence works end to end.** A reconcile of an employee matching a
+   two-clause LOCATION rule produced:
+
+   ```
+   MATCHED_WON   California Employees  pri=800  matched=2  failed=null
+                 attributeValues: {"state":"CA","employmentType":"FULL_TIME"}
+   NOT_MATCHED   Contractor Training   pri=500  matched=0
+                 failed={"op":"eq","value":"CONTRACTOR","attribute":"employmentType"}
+                 attributeValues: {"employmentType":"FULL_TIME"}
+   NOT_MATCHED   Executive Track       pri=300  matched=0
+                 failed={"op":"gte","value":1825,"attribute":"tenureDays"}
+                 attributeValues: {"tenureDays":1268}
+   ```
+
+   The last row is design.md §15's near-miss card with real values — Finding 3's
+   data now exists. Note the DEFAULT rule correctly carries no clauses and no
+   attribute values.
+
+3. **The four new reads return the specified shapes.**
+   `GET /employees/:id/groups?asOf=` resolves `groupName` inline and correctly
+   returns `[]` for a date before the membership began.
+   `GET /policies/:id/assignments?asOf=` carries `employeeName`, `employeeEmail`
+   and `resolutionStatus`. `search` works on rules, policies and audit-events.
+   `GET /reconciliation/status` returned
+   `{"counts":{"PENDING":7,...},"oldestPendingAt":"…"}` while the worker was
+   stopped, and drained once it started — the backlog indicator in §31.3 has a
+   real signal behind it.
+
+4. **All five authorization assertions pass.** As `EMPLOYEE`: 403 on another
+   employee's `/assignments/:id/explanation`, 403 on `/policies/:id/assignments`,
+   403 on `GET /employees`, 403 on another employee's `/groups`, and **200 on
+   their own** `/groups`. Finding 19's gap is closed and self-access still works.
+
+Nothing in the work package is runtime-unverified any longer. The script used is
+in the session scratchpad (`verify.mjs`) and is disposable — it signs up its own
+throwaway organization and touches no existing data.
