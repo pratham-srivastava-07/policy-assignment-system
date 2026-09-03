@@ -35,7 +35,7 @@ export const ATTRIBUTE_LABELS: Record<ConditionAttribute, string> = {
   role: "Role",
   tenureDays: "Tenure",
   isManager: "Manager status",
-  groupId: "Group",
+  groupId: "Membership",
 }
 
 /**
@@ -72,11 +72,13 @@ const OPERATOR_LABELS: Record<AttributeKind, Partial<Record<ConditionOperator, s
     neq: "does not equal",
   },
   boolean: { eq: "is" },
+  // Reads as "Membership includes Beta Testers". Wording the group clause with
+  // "group" in both halves produced "Group is in group Beta Testers".
   group: {
-    eq: "is in group",
-    in: "is in any of",
-    neq: "is not in group",
-    notIn: "is not in any of",
+    eq: "includes",
+    in: "includes any of",
+    neq: "excludes",
+    notIn: "excludes all of",
   },
 }
 
