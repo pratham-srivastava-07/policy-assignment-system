@@ -116,6 +116,8 @@ export const accessService = new AccessService(
 export const auditService = new AuditService(auditEventRepository, employeeRepository)
 export const reconciliationService = new ReconciliationService(outboxEventRepository)
 
+export { reconciliationStreamHub, ReconciliationStreamHub } from "./reconciliation-stream"
+
 export { AccessService } from "./access"
 export { AuditService } from "./audit"
 export { ReconciliationService } from "./reconciliation"

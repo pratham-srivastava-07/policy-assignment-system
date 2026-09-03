@@ -3,6 +3,7 @@ import { EmployeeRepository, ResolutionService } from "@policy/core"
 import { OUTBOX_EVENT_TYPES } from "@policy/shared"
 import { env } from "./config/env"
 import { RECONCILIATION_QUEUE, ReconcileEmployeeJob, connection } from "./queue"
+import { ReconciliationPublisher } from "./stream"
 
 /**
  * The event types this processor knows how to act on.
@@ -67,6 +68,7 @@ export class ReconciliationProcessor {
   constructor(
     private resolution: ResolutionService,
     private employees: EmployeeRepository,
+    private publisher: ReconciliationPublisher,
   ) {}
 
   /** Start consuming. Returns once the worker is listening. */
@@ -122,6 +124,8 @@ export class ReconciliationProcessor {
     await this.worker.close()
 
     this.worker = null
+
+    await this.publisher.close()
   }
 
   private async handle(job: Job<ReconcileEmployeeJob>): Promise<void> {
@@ -174,5 +178,12 @@ export class ReconciliationProcessor {
         `=${result.unchanged.length})` +
         (asOf ? ` [event effective ${asOf}]` : ""),
     )
+
+    await this.publisher.publish(result, {
+      organizationId,
+      employeeName: employee.name,
+      trigger: eventType,
+      outboxEventId: job.data.outboxEventId ?? null,
+    })
   }
 }

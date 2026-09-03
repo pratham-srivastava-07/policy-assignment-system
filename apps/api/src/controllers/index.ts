@@ -11,6 +11,7 @@ import {
   policyCategoryService,
   policyService,
   reconciliationService,
+  reconciliationStreamHub,
   resolutionService,
   ruleService,
   userService,
@@ -22,6 +23,7 @@ import { EmployeeController } from "./employee"
 import { GroupController } from "./group"
 import { PolicyCategoryController, PolicyController } from "./policy"
 import { ReconciliationController } from "./reconciliation"
+import { ReconciliationStreamController } from "./reconciliation-stream"
 import { RuleController } from "./rule"
 import { UserController } from "./user"
 
@@ -36,6 +38,9 @@ export const assignmentController = new AssignmentController(resolutionService)
 export const accessController = new AccessController(accessService)
 export const auditController = new AuditController(auditService)
 export const reconciliationController = new ReconciliationController(reconciliationService)
+export const reconciliationStreamController = new ReconciliationStreamController(
+  reconciliationStreamHub,
+)
 
 export { AccessController, AssignmentController } from "./assignment"
 export { AuditController } from "./audit"
@@ -44,5 +49,6 @@ export { EmployeeController } from "./employee"
 export { GroupController } from "./group"
 export { PolicyCategoryController, PolicyController } from "./policy"
 export { ReconciliationController } from "./reconciliation"
+export { ReconciliationStreamController } from "./reconciliation-stream"
 export { RuleController } from "./rule"
 export { UserController } from "./user"

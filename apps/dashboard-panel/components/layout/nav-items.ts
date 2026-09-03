@@ -1,4 +1,5 @@
 import {
+  Activity,
   ClipboardList,
   FileText,
   Layers,
@@ -62,6 +63,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     requiresAny: [PERMISSIONS.POLICY_READ],
   },
   { href: "/groups", label: "Groups", icon: Layers, requiresAny: [PERMISSIONS.GROUP_READ] },
+  {
+    href: "/activity",
+    label: "Activity",
+    icon: Activity,
+    requiresAny: [PERMISSIONS.ASSIGNMENT_RECONCILE],
+  },
 ]
 
 export const SECONDARY_NAV: readonly NavItem[] = [

@@ -1,6 +1,10 @@
 import { Router } from "express"
 import { PERMISSIONS } from "@policy/shared"
-import { assignmentController, reconciliationController } from "../controllers"
+import {
+  assignmentController,
+  reconciliationController,
+  reconciliationStreamController,
+} from "../controllers"
 import { requireAuth } from "../middlewares/auth"
 import { requirePermission } from "../middlewares/permission"
 import { rateLimit } from "../middlewares/rate-limit"
@@ -39,4 +43,17 @@ reconciliationRouter.get(
   rateLimit.read(),
   requirePermission(PERMISSIONS.ASSIGNMENT_RECONCILE),
   reconciliationController.listEvents,
+)
+
+// Live reconciliation, relayed from the worker via Redis pub/sub.
+//
+// The connection is long-lived, so it spends one READ token at open and none
+// thereafter — the opposite shape from polling, which is the point. Scoped to
+// the caller's organization by the session, and gated on the same permission as
+// the rest of this router: watching reconciliation happen is an operator's job.
+reconciliationRouter.get(
+  "/stream",
+  rateLimit.read(),
+  requirePermission(PERMISSIONS.ASSIGNMENT_RECONCILE),
+  reconciliationStreamController.stream,
 )

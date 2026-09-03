@@ -15,6 +15,7 @@ import {
 import { env } from "./config/env"
 import { ReconciliationProcessor } from "./processor"
 import { OutboxRelay } from "./relay"
+import { ReconciliationPublisher } from "./stream"
 import { connection, reconciliationQueue } from "./queue"
 
 /**
@@ -80,7 +81,20 @@ const relay = new OutboxRelay(
   employeeGroupRepository,
 )
 
-const processor = new ReconciliationProcessor(resolutionService, employeeRepository)
+/**
+ * Announces what reconciliation did, for the dashboard's live feed.
+ *
+ * Wired at this level rather than inside the processor so that the notification
+ * channel stays visibly separate from the work: this is the only dependency the
+ * worker has that it can lose entirely without being wrong.
+ */
+const reconciliationPublisher = new ReconciliationPublisher()
+
+const processor = new ReconciliationProcessor(
+  resolutionService,
+  employeeRepository,
+  reconciliationPublisher,
+)
 
 let shuttingDown = false
 

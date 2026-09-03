@@ -14,6 +14,8 @@ import { useSession } from "@/lib/auth"
 import { AsOfControl, HistoricalModeBanner } from "./as-of-control"
 import { SidebarNav } from "./sidebar-nav"
 import { UserMenu } from "./user-menu"
+import { BacklogIndicator, StreamIndicator } from "./stream-indicator"
+import { CommandMenu, CommandMenuTrigger } from "@/components/command-menu"
 
 const OrganizationMark = () => {
   const { session } = useSession()
@@ -35,8 +37,9 @@ const OrganizationMark = () => {
  */
 const HeaderSlots = () => (
   <>
-    {/* PHASE 8 SLOT: command palette trigger (design.md §33). */}
-    {/* PHASE 6 SLOT: reconciliation backlog indicator (design.md §31.3). */}
+    <CommandMenuTrigger />
+    <BacklogIndicator />
+    <StreamIndicator />
   </>
 )
 
@@ -90,6 +93,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           </main>
         </div>
       </div>
+      <CommandMenu />
     </TooltipProvider>
   )
 }
