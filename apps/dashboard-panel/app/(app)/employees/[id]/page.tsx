@@ -466,7 +466,6 @@ const EmployeeDetail = ({ id }: { id: string }) => {
       {previewOpen ? (
         <PreviewPanel
           employee={person}
-          asOf={asOf}
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}

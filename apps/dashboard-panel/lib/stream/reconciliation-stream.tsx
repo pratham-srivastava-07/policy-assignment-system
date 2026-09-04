@@ -51,8 +51,22 @@ interface StreamValue {
 
 const StreamContext = createContext<StreamValue | null>(null)
 
-export const ReconciliationStreamProvider = ({ children }: { children: ReactNode }) => {
-  const { status: sessionStatus, session } = useSession()
+const OFFLINE_STREAM_VALUE: StreamValue = {
+  status: "offline",
+  events: [],
+  lastMessageAt: null,
+  unseen: new Set(),
+  acknowledge: () => undefined,
+  reconnect: () => undefined,
+}
+
+const ConnectedReconciliationStreamProvider = ({
+  children,
+  organizationId,
+}: {
+  children: ReactNode
+  organizationId: string
+}) => {
   const queryClient = useQueryClient()
 
   const [status, setStatus] = useState<StreamStatus>("connecting")
@@ -64,9 +78,6 @@ export const ReconciliationStreamProvider = ({ children }: { children: ReactNode
   const abortRef = useRef<AbortController | null>(null)
   const retryRef = useRef<number | null>(null)
   const [restartToken, setRestartToken] = useState(0)
-
-  const organizationId = session?.organization.id ?? null
-  const connected = sessionStatus === "authenticated" && organizationId !== null
 
   /**
    * A reconciliation happened, so what TanStack Query holds for that employee is
@@ -82,12 +93,6 @@ export const ReconciliationStreamProvider = ({ children }: { children: ReactNode
   )
 
   useEffect(() => {
-    if (!connected) {
-      setStatus("offline")
-
-      return
-    }
-
     let cancelled = false
     let attempt = 0
 
@@ -172,7 +177,7 @@ export const ReconciliationStreamProvider = ({ children }: { children: ReactNode
       abortRef.current?.abort()
       abortRef.current = null
     }
-  }, [connected, organizationId, invalidateFor, restartToken])
+  }, [organizationId, invalidateFor, restartToken])
 
   /**
    * Silence detection. An open connection that stops heartbeating is not an
@@ -203,6 +208,24 @@ export const ReconciliationStreamProvider = ({ children }: { children: ReactNode
   )
 
   return <StreamContext.Provider value={value}>{children}</StreamContext.Provider>
+}
+
+export const ReconciliationStreamProvider = ({ children }: { children: ReactNode }) => {
+  const { status: sessionStatus, session } = useSession()
+  const organizationId = session?.organization.id ?? null
+  const connected = sessionStatus === "authenticated" && organizationId !== null
+
+  if (!connected) {
+    return (
+      <StreamContext.Provider value={OFFLINE_STREAM_VALUE}>{children}</StreamContext.Provider>
+    )
+  }
+
+  return (
+    <ConnectedReconciliationStreamProvider key={organizationId} organizationId={organizationId}>
+      {children}
+    </ConnectedReconciliationStreamProvider>
+  )
 }
 
 export const useReconciliationStream = (): StreamValue => {

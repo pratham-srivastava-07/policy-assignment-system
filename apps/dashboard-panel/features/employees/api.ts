@@ -80,12 +80,12 @@ export const listAttributeHistory = (id: string, signal?: AbortSignal) =>
   })
 
 export interface EmployeeChanges {
-  department?: string
-  state?: string
-  country?: string
-  location?: string
+  department?: string | null
+  state?: string | null
+  country?: string | null
+  location?: string | null
   employmentType?: string
-  role?: string
+  role?: string | null
 }
 
 /**
@@ -106,7 +106,7 @@ export const previewEmployee = (
 
 export const patchEmployee = (
   id: string,
-  body: EmployeeChanges & { effectiveFrom?: string; managerId?: string },
+  body: EmployeeChanges & { effectiveFrom?: string; managerId?: string | null },
 ) => api.patch<EmployeeDTO>(`/employees/${id}`, body, { tier: "WRITE" })
 
 /** DELETE ends employment; the employee and their history remain readable. */

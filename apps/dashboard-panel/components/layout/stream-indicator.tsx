@@ -66,7 +66,7 @@ export const StreamIndicator = () => {
  * Absent entirely when the backlog is zero.
  */
 export const BacklogIndicator = () => {
-  const { data } = useReconciliationStatus()
+  const { data, dataUpdatedAt } = useReconciliationStatus()
 
   if (!data) return null
 
@@ -76,7 +76,7 @@ export const BacklogIndicator = () => {
   if (pending === 0 && failed === 0) return null
 
   const ageMinutes = data.oldestPendingAt
-    ? Math.floor((Date.now() - new Date(data.oldestPendingAt).getTime()) / 60_000)
+    ? Math.floor((dataUpdatedAt - new Date(data.oldestPendingAt).getTime()) / 60_000)
     : 0
 
   return (

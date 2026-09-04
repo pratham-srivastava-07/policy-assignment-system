@@ -16,6 +16,7 @@
     "seed": "npm run seed --workspace @policy/db",
     "dev:web": "npm run dev --workspace dashboard-panel",
     "build:web": "npm run build --workspace dashboard-panel",
+    "test": "npm run test --workspace @policy/core",
     "dev:worker": "npm run build --workspace @policy/shared && npm run build --workspace @policy/db && npm run build --workspace @policy/core && npm run dev --workspace worker",
     "start:api": "npm run start --workspace api",
     "start:worker": "npm run start --workspace worker",

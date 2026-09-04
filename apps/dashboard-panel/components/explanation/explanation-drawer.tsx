@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { ChevronDown, ChevronRight, Info } from "lucide-react"
 import type { AssignmentDTO } from "@policy/shared"
 import {
@@ -47,14 +47,12 @@ export const ExplanationDrawer = ({
   // §14.5: the explanation returns every rule considered in that evaluation,
   // across all categories. Unfiltered, a question about meal-break training
   // would list the pay-schedule rules underneath it.
-  const { own, others } = useMemo(() => {
-    if (!assignment) return { own: [], others: [] }
-
-    return {
-      own: trail.filter((entry) => entry.categoryId === assignment.categoryId),
-      others: trail.filter((entry) => entry.categoryId !== assignment.categoryId),
-    }
-  }, [trail, assignment])
+  const own = assignment
+    ? trail.filter((entry) => entry.categoryId === assignment.categoryId)
+    : []
+  const others = assignment
+    ? trail.filter((entry) => entry.categoryId !== assignment.categoryId)
+    : []
 
   const currentVersion = explanation.data?.sourceRuleVersion.version
   const staleVersion =

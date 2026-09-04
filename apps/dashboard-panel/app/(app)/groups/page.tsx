@@ -65,8 +65,8 @@ const NewGroupDialog = ({
         <DialogHeader>
           <DialogTitle>New group</DialogTitle>
           <DialogDescription>
-            Groups exist so a rule can say "is in this group" instead of restating a list
-            of attributes.
+            Groups exist so a rule can say &ldquo;is in this group&rdquo; instead of
+            restating a list of attributes.
           </DialogDescription>
         </DialogHeader>
 

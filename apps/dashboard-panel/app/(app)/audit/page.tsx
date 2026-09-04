@@ -1,7 +1,6 @@
 "use client"
 
 import { Suspense, useEffect, useMemo, useState } from "react"
-import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, ClipboardList, Search } from "lucide-react"
@@ -31,7 +30,7 @@ import {
 } from "@/components/ui"
 import { DiffRow } from "@/components/policy"
 import { QUERY_TIERS, queryKeys } from "@/lib/query"
-import { formatDayTime, formatRelative, withAsOf, useAsOf } from "@/lib/dates"
+import { formatDayTime, formatRelative } from "@/lib/dates"
 import { useActorNames } from "@/features/reference/hooks"
 import { listAuditEvents, type AuditFilters } from "@/features/reference/api"
 
@@ -201,7 +200,6 @@ const EventDrawer = ({
 const AuditView = () => {
   const router = useRouter()
   const params = useSearchParams()
-  const { asOf } = useAsOf()
   const { nameOf: actorName } = useActorNames()
 
   const [draft, setDraft] = useState(params.get("search") ?? "")

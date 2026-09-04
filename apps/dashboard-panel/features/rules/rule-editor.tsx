@@ -85,7 +85,10 @@ export const RuleEditor = ({ rule }: { rule?: RuleDTO }) => {
   const [attempted, setAttempted] = useState(false)
 
   const conditionless = CONDITIONLESS.includes(ruleType)
-  const activeClauses = conditionless ? [] : clauses
+  const activeClauses = useMemo(
+    () => (conditionless ? [] : clauses),
+    [conditionless, clauses],
+  )
 
   const policy = policyId ? policyOf(policyId) : undefined
   const category = policy ? categoryOf(policy.categoryId) : undefined
