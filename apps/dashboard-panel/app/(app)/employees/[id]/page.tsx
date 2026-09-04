@@ -3,14 +3,34 @@
 import { Suspense, use, useMemo, useState } from "react"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Info, RefreshCw, SlidersHorizontal } from "lucide-react"
+import {
+  ArrowLeft,
+  Info,
+  MoreHorizontal,
+  RefreshCw,
+  SlidersHorizontal,
+  UserMinus,
+} from "lucide-react"
 import type { AssignmentDTO, Cardinality } from "@policy/shared"
 import { PageHeader } from "@/components/layout"
 import {
   Badge,
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   EmptyState,
   ErrorState,
+  Field,
+  FormErrorBanner,
+  Input,
   RateLimitNotice,
   Skeleton,
   SkeletonRows,
@@ -22,10 +42,11 @@ import {
 import { DiffCounts, DiffRow, PolicyChip } from "@/components/policy"
 import { ExplanationDrawer, NearMiss, type ExplanationTarget } from "@/components/explanation"
 import { QUERY_TIERS, queryKeys } from "@/lib/query"
-import { formatDay, isZeroLengthPeriod, useAsOf } from "@/lib/dates"
+import { formatDay, isZeroLengthPeriod, todayIso, useAsOf } from "@/lib/dates"
 import { useGroupNames, usePolicyNames } from "@/features/reference/hooks"
 import * as employeeApi from "@/features/employees/api"
 import { getExplanation } from "@/features/reference/api"
+import { PERMISSIONS, useCan } from "@/lib/permissions"
 import { PreviewPanel } from "./preview-panel"
 
 /**
@@ -40,11 +61,14 @@ import { PreviewPanel } from "./preview-panel"
 const EmployeeDetail = ({ id }: { id: string }) => {
   const { asOf, historical } = useAsOf()
   const queryClient = useQueryClient()
+  const canWrite = useCan(PERMISSIONS.EMPLOYEE_WRITE)
   const { nameOf: policyNameOf } = usePolicyNames()
   const { nameOf: groupName } = useGroupNames()
 
   const [explaining, setExplaining] = useState<ExplanationTarget | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [terminateOpen, setTerminateOpen] = useState(false)
+  const [terminationDate, setTerminationDate] = useState(todayIso())
 
   const employee = useQuery({
     queryKey: queryKeys.employee(id),
@@ -91,6 +115,19 @@ const EmployeeDetail = ({ id }: { id: string }) => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.employee(id) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.reconciliationStatus() })
+    },
+  })
+
+  const terminate = useMutation({
+    mutationFn: () =>
+      employeeApi.terminateEmployee(id, { terminatedOn: terminationDate }),
+    onSuccess: async () => {
+      setTerminateOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["employee", id] }),
+        queryClient.invalidateQueries({ queryKey: ["employees"] }),
+        queryClient.invalidateQueries({ queryKey: ["reconciliation", "status"] }),
+      ])
     },
   })
 
@@ -174,6 +211,28 @@ const EmployeeDetail = ({ id }: { id: string }) => {
                 <RefreshCw aria-hidden />
                 Reconcile now
               </Button>
+              {canWrite ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="ghost" aria-label="Employee actions">
+                      <MoreHorizontal aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem
+                      className="text-status-danger"
+                      onSelect={() => {
+                        terminate.reset()
+                        setTerminationDate(todayIso())
+                        setTerminateOpen(true)
+                      }}
+                    >
+                      <UserMinus aria-hidden />
+                      Terminate employee
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </>
           )
         }
@@ -411,6 +470,65 @@ const EmployeeDetail = ({ id }: { id: string }) => {
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}
+
+      <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>
+        <DialogContent>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (terminationDate) terminate.mutate()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Terminate {person.name}?</DialogTitle>
+              <DialogDescription>
+                This ends employment without deleting the employee or their history.
+              </DialogDescription>
+            </DialogHeader>
+
+            <Field
+              id="termination-date"
+              label="Effective termination date"
+              hint="Open policy assignments and group memberships close on this date."
+            >
+              <Input
+                id="termination-date"
+                type="date"
+                required
+                value={terminationDate}
+                onChange={(event) => setTerminationDate(event.target.value)}
+              />
+            </Field>
+
+            <div className="rounded-md bg-status-warning-bg px-3 py-2 text-sm text-status-warning">
+              {person.name} will be marked terminated immediately and excluded from
+              future rule evaluation. Existing policy, membership and audit history
+              remains readable.
+            </div>
+
+            {terminate.error ? <FormErrorBanner error={terminate.error} /> : null}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setTerminateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                loading={terminate.isPending}
+                disabled={!terminationDate}
+              >
+                Terminate employee
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

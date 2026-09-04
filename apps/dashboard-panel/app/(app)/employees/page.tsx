@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Search, Users, X } from "lucide-react"
+import { Plus, Search, Users, X } from "lucide-react"
 import { DEFAULT_PAGE_SIZE } from "@policy/shared"
 import { PageHeader } from "@/components/layout"
 import {
@@ -26,6 +26,7 @@ import {
 import { QUERY_TIERS, queryKeys } from "@/lib/query"
 import { useAsOf, withAsOf } from "@/lib/dates"
 import { listEmployees, type EmployeeFilters } from "@/features/employees/api"
+import { PERMISSIONS, useCan } from "@/lib/permissions"
 
 /**
  * The employee list (design.md §11).
@@ -41,11 +42,13 @@ const EmployeeListView = () => {
   const router = useRouter()
   const params = useSearchParams()
   const { asOf } = useAsOf()
+  const canWrite = useCan(PERMISSIONS.EMPLOYEE_WRITE)
 
   const page = Number(params.get("page") ?? "1")
   // §11.3: the API does not filter to ACTIVE by default. The client asks for it
   // and shows the ask as a removable chip, so the default is discoverable.
-  const status = params.get("status") ?? "ACTIVE"
+  const statusParam = params.get("status")
+  const status = statusParam === "ALL" ? undefined : (statusParam ?? "ACTIVE")
   const [draft, setDraft] = useState(params.get("search") ?? "")
 
   const filters: EmployeeFilters = Object.fromEntries(
@@ -92,11 +95,33 @@ const EmployeeListView = () => {
     Object.entries(filters).filter(([key]) => key !== "search"),
   ) as [string, string][]
 
+  // The normal list intentionally defaults to ACTIVE. When it is empty, this
+  // one-row read distinguishes a new organization from one whose filters merely
+  // hide terminated employees, so the empty-state action stays truthful.
+  const allEmployees = useQuery({
+    queryKey: queryKeys.employees({ purpose: "empty-state-check" }),
+    queryFn: ({ signal }) => listEmployees({}, { limit: 1, offset: 0 }, signal),
+    enabled: query.isSuccess && total === 0,
+    ...QUERY_TIERS.REFERENCE,
+  })
+
+  const trulyEmpty = allEmployees.data?.total === 0
+
   return (
     <>
       <PageHeader
         title="Employees"
         description="Every policy assignment in the organization is reached from here."
+        actions={
+          canWrite ? (
+            <Button asChild size="sm" variant="primary">
+              <Link href="/employees/new">
+                <Plus aria-hidden />
+                Add employee
+              </Link>
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="mb-4 flex flex-col gap-3">
@@ -136,12 +161,31 @@ const EmployeeListView = () => {
         <SkeletonRows rows={10} />
       ) : query.error ? (
         <ErrorState error={query.error} onRetry={() => query.refetch()} />
+      ) : total === 0 && allEmployees.isPending ? (
+        <div aria-live="polite" aria-label="Checking for employees">
+          <SkeletonRows rows={3} />
+        </div>
+      ) : total === 0 && allEmployees.error ? (
+        <ErrorState error={allEmployees.error} onRetry={() => allEmployees.refetch()} />
+      ) : total === 0 && trulyEmpty ? (
+        <EmptyState
+          icon={Users}
+          title="No employees yet."
+          description="Add the first employee so assignment rules have someone to evaluate."
+          action={
+            canWrite ? (
+              <Button asChild size="sm" variant="primary">
+                <Link href="/employees/new">Add employee</Link>
+              </Button>
+            ) : undefined
+          }
+        />
       ) : total === 0 ? (
         <EmptyState
           icon={Users}
           title="No employees match these filters."
           action={
-            <Button size="sm" onClick={() => router.replace("/employees")}>
+            <Button size="sm" onClick={() => router.replace("/employees?status=ALL")}>
               Clear filters
             </Button>
           }

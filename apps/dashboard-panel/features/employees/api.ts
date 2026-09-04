@@ -22,6 +22,24 @@ export interface EmployeeFilters {
   isManager?: boolean
 }
 
+export interface CreateEmployeeInput {
+  name: string
+  email: string
+  hireDate: string
+  employmentType: string
+  department?: string
+  role?: string
+  location?: string
+  state?: string
+  country?: string
+  managerId?: string
+  effectiveFrom?: string
+}
+
+export interface TerminateEmployeeInput {
+  terminatedOn?: string
+}
+
 /** §11.2: every one of these is an exact match except `search`. */
 export const listEmployees = (
   filters: EmployeeFilters,
@@ -36,6 +54,9 @@ export const listEmployees = (
 
 export const getEmployee = (id: string, signal?: AbortSignal) =>
   api.get<EmployeeDTO>(`/employees/${id}`, { signal, tier: "READ" })
+
+export const createEmployee = (body: CreateEmployeeInput) =>
+  api.post<EmployeeDTO>("/employees", body, { tier: "WRITE" })
 
 export const listEmployeeAssignments = (id: string, asOf: AsOf, signal?: AbortSignal) =>
   api.get<Page<AssignmentDTO>>(`/employees/${id}/assignments`, {
@@ -87,6 +108,10 @@ export const patchEmployee = (
   id: string,
   body: EmployeeChanges & { effectiveFrom?: string; managerId?: string },
 ) => api.patch<EmployeeDTO>(`/employees/${id}`, body, { tier: "WRITE" })
+
+/** DELETE ends employment; the employee and their history remain readable. */
+export const terminateEmployee = (id: string, body: TerminateEmployeeInput = {}) =>
+  api.delete<EmployeeDTO>(`/employees/${id}`, { body, tier: "WRITE" })
 
 /** Synchronous: the response is the result, not a queued acknowledgement (§31.1). */
 export const reconcileEmployee = (id: string, asOf: AsOf) =>
